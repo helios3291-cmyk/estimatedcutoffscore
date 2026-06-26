@@ -1,0 +1,168 @@
+export const TIER_ORDER = ["상", "중", "하"];
+export const TIER_KEYS = { 상: "high", 중: "mid", 하: "low" };
+
+export const GRADE_MODE_FIVE = "five";
+export const GRADE_MODE_SIX = "six";
+
+export const BOUNDARY_KEYS_FIVE = ["AB", "BC", "CD", "DE"];
+export const BOUNDARY_KEYS_SIX = ["AB", "BC", "CD", "DE", "E_fail"];
+
+export const BOUNDARY_LABELS = {
+  AB: "A/B",
+  BC: "B/C",
+  CD: "C/D",
+  DE: "D/E",
+  E_fail: "E/미도달",
+};
+
+export const GRADE_LABELS = ["A", "B", "C", "D", "E", "미도달"];
+
+export function round1(n) {
+  return Math.round(n * 10) / 10;
+}
+
+export function getBoundaryKeys(mode) {
+  return mode === GRADE_MODE_SIX ? BOUNDARY_KEYS_SIX : BOUNDARY_KEYS_FIVE;
+}
+
+export function parseScore(value) {
+  if (value === "" || value === null || value === undefined) return null;
+  const n = parseFloat(value);
+  return Number.isFinite(n) ? round1(n) : null;
+}
+
+export function validateCutoffs(cutoffs, mode, maxScore = 100) {
+  const keys = getBoundaryKeys(mode);
+  const issues = [];
+
+  for (const key of keys) {
+    const v = cutoffs[key];
+    if (v === null || v === undefined || !Number.isFinite(v)) {
+      issues.push(`${BOUNDARY_LABELS[key]} 경계값을 입력해 주세요.`);
+      continue;
+    }
+    if (v < 0 || v > maxScore) {
+      issues.push(`${BOUNDARY_LABELS[key]} 경계값은 0~${maxScore} 사이여야 합니다.`);
+    }
+  }
+
+  if (issues.length) return issues;
+
+  for (let i = 0; i < keys.length - 1; i++) {
+    const higher = cutoffs[keys[i]];
+    const lower = cutoffs[keys[i + 1]];
+    if (higher <= lower) {
+      issues.push(
+        `${BOUNDARY_LABELS[keys[i]]}(${higher})는 ${BOUNDARY_LABELS[keys[i + 1]]}(${lower})보다 커야 합니다.`
+      );
+    }
+  }
+
+  return issues;
+}
+
+export function validateWeights(weights) {
+  const issues = [];
+  const { exam1, exam2, perf } = weights;
+  const values = [exam1, exam2, perf];
+
+  if (values.some((v) => !Number.isFinite(v) || v < 0)) {
+    issues.push("반영 비율은 0 이상의 숫자여야 합니다.");
+    return issues;
+  }
+
+  const sum = round1(exam1 + exam2 + perf);
+  if (Math.abs(sum - 100) >= 0.05) {
+    issues.push(`반영 비율 합이 ${sum}%입니다. 합이 100%가 되도록 조정해 주세요.`);
+  }
+
+  if (exam2 === 0) {
+    issues.push("정기시험2 반영 비율이 0%이면 정기2 조율 기능을 사용할 수 없습니다.");
+  }
+
+  return issues;
+}
+
+export function buildGradeRanges(finalCutoffs, mode) {
+  const keys = getBoundaryKeys(mode);
+  const ranges = [];
+
+  ranges.push({
+    grade: "A",
+    min: finalCutoffs.AB,
+    max: 100,
+    label: `A  ≥  ${finalCutoffs.AB}`,
+  });
+
+  const mids = [
+    { grade: "B", high: "AB", low: "BC" },
+    { grade: "C", high: "BC", low: "CD" },
+    { grade: "D", high: "CD", low: "DE" },
+  ];
+
+  for (const { grade, high, low } of mids) {
+    ranges.push({
+      grade,
+      min: finalCutoffs[low],
+      max: finalCutoffs[high],
+      label: `${grade}  ${finalCutoffs[low]} ~ ${round1(finalCutoffs[high] - 0.1)}`,
+    });
+  }
+
+  if (mode === GRADE_MODE_SIX) {
+    ranges.push({
+      grade: "E",
+      min: finalCutoffs.E_fail,
+      max: finalCutoffs.DE,
+      label: `E  ${finalCutoffs.E_fail} ~ ${round1(finalCutoffs.DE - 0.1)}`,
+    });
+    ranges.push({
+      grade: "미도달",
+      min: 0,
+      max: finalCutoffs.E_fail,
+      label: `미도달  <  ${finalCutoffs.E_fail}`,
+    });
+  } else {
+    ranges.push({
+      grade: "E",
+      min: 0,
+      max: finalCutoffs.DE,
+      label: `E  <  ${finalCutoffs.DE}`,
+    });
+  }
+
+  return ranges;
+}
+
+export function predictGrade(score, finalCutoffs, mode) {
+  const s = round1(score);
+  if (!Number.isFinite(s)) return { grade: null, error: "점수가 올바르지 않습니다." };
+
+  if (s >= finalCutoffs.AB) return { grade: "A", score: s };
+  if (s >= finalCutoffs.BC) return { grade: "B", score: s };
+  if (s >= finalCutoffs.CD) return { grade: "C", score: s };
+  if (s >= finalCutoffs.DE) return { grade: "D", score: s };
+
+  if (mode === GRADE_MODE_SIX) {
+    if (s >= finalCutoffs.E_fail) return { grade: "E", score: s };
+    return { grade: "미도달", score: s };
+  }
+
+  return { grade: "E", score: s };
+}
+
+export function distanceToBoundaries(score, finalCutoffs, mode) {
+  const keys = getBoundaryKeys(mode);
+  const s = round1(score);
+  const distances = [];
+
+  for (const key of keys) {
+    distances.push({
+      boundary: BOUNDARY_LABELS[key],
+      value: finalCutoffs[key],
+      diff: round1(s - finalCutoffs[key]),
+    });
+  }
+
+  return distances;
+}

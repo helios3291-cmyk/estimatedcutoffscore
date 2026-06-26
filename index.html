@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>추정 분할점수 산출 도우미</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>추정 분할점수 산출 도우미</h1>
+      <p class="subtitle">정기시험·수행평가 분할점수와 반영 비율로 최종 추정 분할점수를 산출합니다.</p>
+      <div class="grade-mode-bar">
+        <span class="grade-mode-label">성취도 체계</span>
+        <label class="radio-label">
+          <input type="radio" name="grade-mode" value="five" checked>
+          5단계 (A~E)
+        </label>
+        <label class="radio-label">
+          <input type="radio" name="grade-mode" value="six">
+          5단계 + 미도달
+        </label>
+      </div>
+    </header>
+
+    <nav class="tab-nav" role="tablist">
+      <button type="button" class="tab-btn active" data-tab="basic" role="tab">기본 산출</button>
+      <button type="button" class="tab-btn" data-tab="exam-helper" role="tab">정기시험 도우미</button>
+      <button type="button" class="tab-btn" data-tab="exam2-tuner" role="tab">정기2 조율</button>
+      <button type="button" class="tab-btn" data-tab="student" role="tab">학생 예측</button>
+    </nav>
+
+    <main>
+      <div id="panel-basic" class="tab-panel active" role="tabpanel"></div>
+      <div id="panel-exam-helper" class="tab-panel" role="tabpanel"></div>
+      <div id="panel-exam2-tuner" class="tab-panel" role="tabpanel"></div>
+      <div id="panel-student" class="tab-panel" role="tabpanel"></div>
+    </main>
+
+    <footer class="disclaimer">
+      <p>본 도구는 교사의 추정을 돕는 참고용입니다. 실제 성적 산출 방식·학교 지침과 다를 수 있습니다.</p>
+      <p>기여분 = 분할점수 × (반영비율 ÷ 만점) · 최종 = 정기1 기여 + 정기2 기여 + 수행 기여</p>
+    </footer>
+  </div>
+
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
