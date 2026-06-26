@@ -1,5 +1,5 @@
 import { computeWeightedScore } from "./cutoffs.js";
-import { predictGrade, distanceToBoundaries, round1 } from "./grades.js";
+import { predictGrade, distanceToBoundaries, round1, roundInt } from "./grades.js";
 
 export function predictStudentGrade(scores, config, finalCutoffs, mode) {
   const { exam1, exam2, perf } = scores;

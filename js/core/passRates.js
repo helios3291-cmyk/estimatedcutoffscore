@@ -1,4 +1,13 @@
-import { round1, getBoundaryKeys, TIER_ORDER } from "./grades.js";
+import {
+  round1,
+  getBoundaryKeys,
+  TIER_ORDER,
+  GRADE_FOR_BOUNDARY,
+  boundaryForGradeColumn,
+  gradeColumnsForMode,
+  TIER_LABELS_KO,
+  GRADE_MODE_SIX,
+} from "./grades.js";
 
 const TEMPLATE_BASE = { 하: 0.95, 중: 0.78, 상: 0.55 };
 const BOUNDARY_SCALE = { AB: 1.0, BC: 0.88, CD: 0.74, DE: 0.58, E_fail: 0.42 };
@@ -153,4 +162,105 @@ export function validateQuestions(questions) {
   }
 
   return issues;
+}
+
+export function passRatesToMatrix(passRates, mode) {
+  const matrix = {};
+  const keys = getBoundaryKeys(mode);
+
+  for (const boundary of keys) {
+    const grade =
+      boundary === "E_fail" && mode === GRADE_MODE_SIX
+        ? "미도달"
+        : GRADE_FOR_BOUNDARY[boundary];
+    if (!grade || !passRates[boundary]) continue;
+    matrix[grade] = {};
+    for (const tier of TIER_ORDER) {
+      matrix[grade][tier] = Math.round((passRates[boundary][tier] || 0) * 100);
+    }
+  }
+
+  return matrix;
+}
+
+export function matrixToPassRates(matrix, mode) {
+  const result = {};
+  const keys = getBoundaryKeys(mode);
+
+  for (const boundary of keys) {
+    const grade =
+      boundary === "E_fail" && mode === GRADE_MODE_SIX
+        ? "미도달"
+        : GRADE_FOR_BOUNDARY[boundary];
+    if (!grade || !matrix[grade]) continue;
+    result[boundary] = {};
+    for (const tier of TIER_ORDER) {
+      result[boundary][tier] = Math.max(0, Math.min(100, matrix[grade][tier] || 0)) / 100;
+    }
+  }
+
+  return result;
+}
+
+export function buildTierRowsBasic(points) {
+  return TIER_ORDER.map((tier) => ({
+    type: "전체",
+    tier,
+    tierLabel: TIER_LABELS_KO[tier],
+    questionNums: "-",
+    questionCount: "-",
+    pointsSum: points[tier] || 0,
+  }));
+}
+
+export function buildTierRowsFromQuestions(questions) {
+  const groups = new Map();
+
+  for (const q of questions) {
+    const key = `${q.type}|${q.tier}`;
+    if (!groups.has(key)) {
+      groups.set(key, { type: q.type, tier: q.tier, nums: [], points: 0 });
+    }
+    const g = groups.get(key);
+    g.nums.push(q.num);
+    g.points = round1(g.points + q.point);
+  }
+
+  const typeOrder = { 선택형: 0, 서답형: 1 };
+  const tierOrder = { 하: 0, 중: 1, 상: 2 };
+
+  return [...groups.values()]
+    .sort(
+      (a, b) =>
+        (typeOrder[a.type] ?? 9) - (typeOrder[b.type] ?? 9) ||
+        tierOrder[a.tier] - tierOrder[b.tier]
+    )
+    .map((g) => ({
+      type: g.type,
+      tier: g.tier,
+      tierLabel: TIER_LABELS_KO[g.tier],
+      questionNums: g.nums.join(", "),
+      questionCount: g.nums.length,
+      pointsSum: g.points,
+    }));
+}
+
+export function expectedScoreFromMatrix(tierRows, matrix, grade) {
+  const rates = matrix[grade];
+  if (!rates) return 0;
+  let sum = 0;
+  for (const row of tierRows) {
+    const pts = typeof row.pointsSum === "number" ? row.pointsSum : 0;
+    sum += pts * ((rates[row.tier] || 0) / 100);
+  }
+  return round1(sum);
+}
+
+export function expectedScoresByGrade(tierRows, matrix, mode) {
+  const cols = gradeColumnsForMode(mode);
+  const scores = {};
+  for (const grade of cols) {
+    scores[grade] = expectedScoreFromMatrix(tierRows, matrix, grade);
+  }
+  return scores;
 }

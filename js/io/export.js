@@ -1,4 +1,4 @@
-import { BOUNDARY_LABELS } from "../core/grades.js";
+import { BOUNDARY_LABELS, gradeColumnsForMode } from "../core/grades.js";
 
 export function downloadJson(data, filename) {
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
@@ -25,15 +25,17 @@ export function readJsonFile(file) {
   });
 }
 
-export function buildExamCutoffExport(exam, mode, pointsByDifficulty, cutoffs, passRates, questions) {
+export function buildExamCutoffExport(exam, mode, pointsByDifficulty, cutoffs, passRates, questions, passRateMatrix, tierRows) {
   return {
     type: "exam_cutoff",
-    version: 1,
+    version: 2,
     exam,
     mode,
     pointsByDifficulty,
     cutoffs,
     passRates,
+    passRateMatrix: passRateMatrix || null,
+    tierRows: tierRows || null,
     questions: questions || null,
     exportedAt: new Date().toISOString(),
   };
@@ -94,30 +96,30 @@ export function buildBasicExcelRows(finalCutoffs, gradeRanges, config, component
   return rows;
 }
 
-export function buildExamHelperExcelRows(examLabel, points, cutoffs, passRates) {
+export function buildExamHelperExcelRows(examLabel, tierRows, cutoffs, passRateMatrix, mode) {
+  const gradeCols = gradeColumnsForMode(mode);
   const rows = [
     [`정기시험 도우미 — ${examLabel}`],
     [],
-    ["난이도", "배점합"],
-    ["하", points.하],
-    ["중", points.중],
-    ["상", points.상],
-    [],
-    ["경계", "목표 점수", "하 통과율", "중 통과율", "상 통과율", "예상 점수"],
+    ["문항구분", "난이도", "해당문항번호", "문항수", "배점합", ...gradeCols],
   ];
 
-  for (const [key, rates] of Object.entries(passRates)) {
-    const label = BOUNDARY_LABELS[key] || key;
-    const expected = (points.하 * rates.하 + points.중 * rates.중 + points.상 * rates.상).toFixed(1);
+  for (const row of tierRows) {
     rows.push([
-      label,
-      cutoffs[key],
-      `${(rates.하 * 100).toFixed(1)}%`,
-      `${(rates.중 * 100).toFixed(1)}%`,
-      `${(rates.상 * 100).toFixed(1)}%`,
-      expected,
+      row.type,
+      row.tierLabel,
+      row.questionNums,
+      row.questionCount,
+      row.pointsSum,
+      ...gradeCols.map((g) => passRateMatrix[g]?.[row.tier] ?? 0),
     ]);
   }
+
+  rows.push([]);
+  rows.push(["목표 분할점수", "", "", "", "", ...gradeCols.map((g) => {
+    const b = { A: "AB", B: "BC", C: "CD", D: "DE", E: "DE", 미도달: "E_fail" }[g];
+    return cutoffs[b] ?? "";
+  })]);
 
   return rows;
 }

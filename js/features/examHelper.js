@@ -10,10 +10,13 @@ import {
   aggregatePointsByDifficulty,
   validatePointsByDifficulty,
   solvePassRatesForCutoffs,
-  adjustPassRate,
   expectedScore,
   validateQuestions,
-  distributeItemRates,
+  passRatesToMatrix,
+  matrixToPassRates,
+  buildTierRowsBasic,
+  buildTierRowsFromQuestions,
+  expectedScoresByGrade,
 } from "../core/passRates.js";
 import {
   downloadJson,
@@ -23,6 +26,7 @@ import {
   pushExamCutoffToSession,
 } from "../io/export.js";
 import { applyExamCutoffsToBasic } from "./basic.js";
+import { gradeColumnsForMode, boundaryForGradeColumn, TIER_KEYS } from "../core/grades.js";
 
 const EXAM_LABELS = { mid1: "정기시험1", mid2: "정기시험2" };
 
@@ -86,13 +90,22 @@ export function initExamHelper(app) {
           <button type="button" id="apply-helper-basic" class="primary-btn small-btn">기본 산출에 적용</button>
         </div>
       </div>
-      <p class="notice">아래 통과율은 조정 가능한 제안값입니다. 슬라이더로 미세 조정하면 예상 점수가 갱신됩니다.</p>
-      <div id="pass-rate-panels"></div>
-      <div id="item-rate-table-wrap" class="table-wrap" hidden>
-        <h3 class="sub-heading">문항별 통과율 (난이도별 비례 배분)</h3>
-        <table class="data-table" id="item-rate-table">
-          <thead><tr><th>문항</th><th>배점</th><th>난이도</th><th>유형</th><th>통과율</th></tr></thead>
-          <tbody></tbody>
+      <p class="notice">난이도별·성취도별 예상 정답률을 직접 수정할 수 있습니다. 하단에서 목표 분할점수와 예상 점수를 비교하세요.</p>
+      <div class="table-wrap">
+        <table class="data-table pass-rate-table" id="pass-rate-table">
+          <thead>
+            <tr>
+              <th rowspan="2">문항구분</th>
+              <th rowspan="2">난이도</th>
+              <th rowspan="2">해당문항번호</th>
+              <th rowspan="2">문항수</th>
+              <th rowspan="2">배점합</th>
+              <th colspan="5" id="rate-header-span">최소능력자 예상정답률(%)</th>
+            </tr>
+            <tr id="grade-col-header"></tr>
+          </thead>
+          <tbody id="pass-rate-body"></tbody>
+          <tfoot id="pass-rate-foot"></tfoot>
         </table>
       </div>
     </section>
@@ -104,10 +117,31 @@ export function initExamHelper(app) {
     points: { 하: 30, 중: 50, 상: 20 },
     cutoffs: {},
     passRates: {},
+    passRateMatrix: {},
+    tierRows: [],
     questions: defaultQuestions(),
   };
 
-  let fixedTierForAdjust = "중";
+  function enrichMatrixForFiveMode(matrix, cutoffs, points) {
+    if (app.gradeMode !== "five") return matrix;
+    const de = cutoffs.DE;
+    if (!Number.isFinite(de)) return matrix;
+    const extra = solvePassRatesForCutoffs({ E_fail: Math.max(0, de * 0.85) }, points, "six");
+    if (extra.E_fail) {
+      matrix.E = {};
+      for (const tier of TIER_ORDER) {
+        matrix.E[tier] = Math.round((extra.E_fail[tier] || 0) * 100);
+      }
+    }
+    return matrix;
+  }
+
+  function getTierRows() {
+    if (app.helperState.inputMode === "detail") {
+      return buildTierRowsFromQuestions(readQuestions());
+    }
+    return buildTierRowsBasic(readPoints());
+  }
 
   function defaultQuestions() {
     return Array.from({ length: 5 }, (_, i) => ({
@@ -237,107 +271,131 @@ export function initExamHelper(app) {
     return readPoints();
   }
 
-  function renderPassRatePanels(passRates, points, cutoffs) {
-    const container = document.getElementById("pass-rate-panels");
-    const keys = getBoundaryKeys(app.gradeMode);
+  function renderPassRateTable(passRates, points, cutoffs) {
+    const gradeCols = gradeColumnsForMode(app.gradeMode);
+    let matrix = passRatesToMatrix(passRates, app.gradeMode);
+    matrix = enrichMatrixForFiveMode(matrix, cutoffs, points);
 
-    container.innerHTML = keys
-      .map((key) => {
-        const rates = passRates[key] || { 하: 0, 중: 0, 상: 0 };
-        const score = expectedScore(points, rates);
+    app.helperState.passRateMatrix = matrix;
+    app.helperState.tierRows = getTierRows();
+    const tierRows = app.helperState.tierRows;
+
+    const headerSpan = document.getElementById("rate-header-span");
+    headerSpan.colSpan = gradeCols.length;
+    headerSpan.textContent = "최소능력자 예상정답률(%)";
+
+    document.getElementById("grade-col-header").innerHTML = gradeCols
+      .map((g) => `<th class="grade-col${g === "E" || g === "미도달" ? " grade-col-warn" : ""}">${g}</th>`)
+      .join("");
+
+    const typeRowspan = new Map();
+    if (app.helperState.inputMode === "detail") {
+      for (const row of tierRows) {
+        typeRowspan.set(row.type, (typeRowspan.get(row.type) || 0) + 1);
+      }
+    }
+
+    const renderedTypes = new Set();
+    const isBasic = app.helperState.inputMode === "basic";
+    document.getElementById("pass-rate-body").innerHTML = tierRows
+      .map((row, idx) => {
+        let typeCell = "";
+        if (isBasic) {
+          typeCell = idx === 0 ? `<td rowspan="${tierRows.length}">${row.type}</td>` : "";
+        } else if (!renderedTypes.has(row.type)) {
+          typeCell = `<td rowspan="${typeRowspan.get(row.type)}">${row.type}</td>`;
+          renderedTypes.add(row.type);
+        }
+
+        const rateCells = gradeCols
+          .map((grade) => {
+            const val = matrix[grade]?.[row.tier] ?? 0;
+            const warn = grade === "E" || grade === "미도달" ? " rate-input-warn" : "";
+            return `
+            <td>
+              <input type="number" class="rate-cell-input${warn}"
+                data-tier="${row.tier}" data-grade="${grade}"
+                min="0" max="100" step="1" value="${val}">
+            </td>`;
+          })
+          .join("");
+
         return `
-        <div class="pass-panel" data-boundary="${key}">
-          <h3>${BOUNDARY_LABELS[key]} 경계 — 목표 ${cutoffs[key]}점 · 예상 ${score}점</h3>
-          <div class="slider-grid">
-            ${TIER_ORDER.map(
-              (tier) => `
-              <div class="slider-field tier ${TIER_KEYS[tier]}">
-                <label>${tier} 통과율 <span class="rate-val" data-tier="${tier}">${(rates[tier] * 100).toFixed(1)}%</span></label>
-                <input type="range" class="rate-slider" data-tier="${tier}" min="0" max="100" step="0.5" value="${(rates[tier] * 100).toFixed(1)}">
-              </div>`
-            ).join("")}
-          </div>
-          <div class="adjust-row">
-            <label>자동 맞춤 축:</label>
-            <select class="solve-tier">
-              ${TIER_ORDER.map((t) => `<option value="${t}"${t === fixedTierForAdjust ? " selected" : ""}>${t}</option>`).join("")}
-            </select>
-          </div>
-        </div>`;
+        <tr class="tier-row tier-row-${TIER_KEYS[row.tier]}">
+          ${typeCell}
+          <td>${row.tierLabel}</td>
+          <td class="qnums">${row.questionNums}</td>
+          <td>${row.questionCount}</td>
+          <td>${row.pointsSum}</td>
+          ${rateCells}
+        </tr>`;
       })
       .join("");
 
-    container.querySelectorAll(".pass-panel").forEach((panel) => {
-      const boundary = panel.dataset.boundary;
-      const solveSelect = panel.querySelector(".solve-tier");
+    renderPassRateFooter(tierRows, matrix, cutoffs);
 
-      solveSelect.addEventListener("change", () => {
-        fixedTierForAdjust = solveSelect.value;
-      });
-
-      panel.querySelectorAll(".rate-slider").forEach((slider) => {
-        slider.addEventListener("input", () => {
-          const tier = slider.dataset.tier;
-          const solveTier = panel.querySelector(".solve-tier").value;
-          const fixedTiers = TIER_ORDER.filter((t) => t !== solveTier);
-          const current = { ...app.helperState.passRates[boundary] };
-          current[tier] = parseFloat(slider.value) / 100;
-
-          for (const ft of fixedTiers) {
-            if (ft !== tier) {
-              const otherSlider = panel.querySelector(`.rate-slider[data-tier="${ft}"]`);
-              current[ft] = parseFloat(otherSlider.value) / 100;
-            }
-          }
-
-          const result = adjustPassRate(points, current, fixedTiers, solveTier, cutoffs[boundary]);
-          app.helperState.passRates[boundary] = result.rates;
-          refreshPanel(panel, boundary, points, cutoffs);
-          renderItemRatesIfDetail();
-          persistHelper(app);
-        });
-      });
+    document.querySelectorAll(".rate-cell-input").forEach((input) => {
+      input.addEventListener("input", () => onRateCellChange(input, tierRows, cutoffs));
     });
   }
 
-  function refreshPanel(panel, boundary, points, cutoffs) {
-    const rates = app.helperState.passRates[boundary];
-    const score = expectedScore(points, rates);
-    panel.querySelector("h3").textContent =
-      `${BOUNDARY_LABELS[boundary]} 경계 — 목표 ${cutoffs[boundary]}점 · 예상 ${score}점`;
+  function onRateCellChange(input, tierRows, cutoffs) {
+    const tier = input.dataset.tier;
+    const grade = input.dataset.grade;
+    const val = Math.max(0, Math.min(100, parseInt(input.value, 10) || 0));
+    input.value = val;
 
-    TIER_ORDER.forEach((tier) => {
-      const val = panel.querySelector(`.rate-val[data-tier="${tier}"]`);
-      const slider = panel.querySelector(`.rate-slider[data-tier="${tier}"]`);
-      if (val) val.textContent = `${(rates[tier] * 100).toFixed(1)}%`;
-      if (slider) slider.value = (rates[tier] * 100).toFixed(1);
-    });
-  }
-
-  function renderItemRatesIfDetail() {
-    const wrap = document.getElementById("item-rate-table-wrap");
-    if (app.helperState.inputMode !== "detail") {
-      wrap.hidden = true;
-      return;
+    if (!app.helperState.passRateMatrix[grade]) {
+      app.helperState.passRateMatrix[grade] = {};
     }
-    wrap.hidden = false;
-    const qs = readQuestions();
-    const tbody = document.querySelector("#item-rate-table tbody");
-    const firstKey = getBoundaryKeys(app.gradeMode)[0];
-    const tierRates = app.helperState.passRates[firstKey] || {};
+    app.helperState.passRateMatrix[grade][tier] = val;
 
-    tbody.innerHTML = distributeItemRates(qs, tierRates)
-      .map(
-        (q) => `
-      <tr>
-        <td>${q.num}</td>
-        <td>${q.point}</td>
-        <td><span class="tier-badge ${TIER_KEYS[q.tier]}">${q.tier}</span></td>
-        <td>${q.type}</td>
-        <td>${(q.passRate * 100).toFixed(1)}%</td>
-      </tr>`
-      )
+    app.helperState.passRates = matrixToPassRates(
+      app.helperState.passRateMatrix,
+      app.gradeMode
+    );
+    renderPassRateFooter(tierRows, app.helperState.passRateMatrix, cutoffs);
+    persistHelper(app);
+  }
+
+  function renderPassRateFooter(tierRows, matrix, cutoffs) {
+    const gradeCols = gradeColumnsForMode(app.gradeMode);
+    const expected = expectedScoresByGrade(tierRows, matrix, app.gradeMode);
+
+    const targetCells = gradeCols
+      .map((grade) => {
+        const boundary = boundaryForGradeColumn(grade, app.gradeMode);
+        let target = boundary ? cutoffs[boundary] : null;
+        if (grade === "E" && app.gradeMode === "five" && target == null) {
+          target = cutoffs.DE != null ? Math.round(cutoffs.DE * 0.85) : null;
+        }
+        return `<td>${target != null ? target : "-"}</td>`;
+      })
       .join("");
+
+    const expectedCells = gradeCols
+      .map((grade) => {
+        const score = expected[grade];
+        const boundary = boundaryForGradeColumn(grade, app.gradeMode);
+        let target = boundary ? cutoffs[boundary] : null;
+        if (grade === "E" && app.gradeMode === "five" && target == null) {
+          target = cutoffs.DE != null ? Math.round(cutoffs.DE * 0.85) : null;
+        }
+        const match =
+          target != null && Math.abs(score - target) < 0.05 ? "match" : "mismatch";
+        return `<td class="expected-${match}">${score}</td>`;
+      })
+      .join("");
+
+    document.getElementById("pass-rate-foot").innerHTML = `
+      <tr class="footer-target">
+        <td colspan="5"><strong>목표 분할점수</strong></td>
+        ${targetCells}
+      </tr>
+      <tr class="footer-expected">
+        <td colspan="5"><strong>예상 점수</strong></td>
+        ${expectedCells}
+      </tr>`;
   }
 
   function calculateHelper() {
@@ -374,8 +432,7 @@ export function initExamHelper(app) {
     errEl.hidden = true;
     resultEl.hidden = false;
 
-    renderPassRatePanels(passRates, points, cutoffs);
-    renderItemRatesIfDetail();
+    renderPassRateTable(passRates, points, cutoffs);
     persistHelper(app);
   }
 
@@ -431,7 +488,9 @@ export function initExamHelper(app) {
       app.helperState.points,
       app.helperState.cutoffs,
       app.helperState.passRates,
-      app.helperState.questions
+      app.helperState.questions,
+      app.helperState.passRateMatrix,
+      app.helperState.tierRows
     );
     downloadJson(data, `exam_cutoff_${exam}.json`);
   });
@@ -441,9 +500,10 @@ export function initExamHelper(app) {
       const exam = document.getElementById("helper-exam").value;
       const rows = buildExamHelperExcelRows(
         EXAM_LABELS[exam],
-        app.helperState.points,
+        app.helperState.tierRows,
         app.helperState.cutoffs,
-        app.helperState.passRates
+        app.helperState.passRateMatrix,
+        app.gradeMode
       );
       exportToExcel(`정기시험도우미_${exam}.xlsx`, [{ name: "통과율", rows }]);
     } catch (e) {
@@ -465,6 +525,13 @@ export function initExamHelper(app) {
     for (const k of keys) {
       const el = document.getElementById(`hc-${k}`);
       if (el) el.addEventListener("input", () => persistHelper(app));
+    }
+    if (!document.getElementById("helper-result").hidden && app.helperState.passRates) {
+      renderPassRateTable(
+        app.helperState.passRates,
+        app.helperState.points,
+        app.helperState.cutoffs
+      );
     }
   });
 

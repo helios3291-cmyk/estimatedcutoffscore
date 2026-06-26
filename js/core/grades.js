@@ -21,6 +21,37 @@ export function round1(n) {
   return Math.round(n * 10) / 10;
 }
 
+export function roundInt(n) {
+  return Math.round(n);
+}
+
+export const TIER_LABELS_KO = { 하: "쉬움", 중: "보통", 상: "어려움" };
+
+export const GRADE_FOR_BOUNDARY = {
+  AB: "A",
+  BC: "B",
+  CD: "C",
+  DE: "D",
+  E_fail: "E",
+};
+
+export const BOUNDARY_FOR_GRADE = {
+  A: "AB",
+  B: "BC",
+  C: "CD",
+  D: "DE",
+  E: "E_fail",
+};
+
+export function gradeColumnsForMode(mode) {
+  return mode === GRADE_MODE_SIX ? ["A", "B", "C", "D", "E", "미도달"] : ["A", "B", "C", "D", "E"];
+}
+
+export function boundaryForGradeColumn(grade, mode) {
+  if (grade === "미도달") return "E_fail";
+  return BOUNDARY_FOR_GRADE[grade] ?? null;
+}
+
 export function getBoundaryKeys(mode) {
   return mode === GRADE_MODE_SIX ? BOUNDARY_KEYS_SIX : BOUNDARY_KEYS_FIVE;
 }
@@ -89,9 +120,9 @@ export function buildGradeRanges(finalCutoffs, mode) {
 
   ranges.push({
     grade: "A",
-    min: finalCutoffs.AB,
+    min: roundInt(finalCutoffs.AB),
     max: 100,
-    label: `A  ≥  ${finalCutoffs.AB}`,
+    label: `A  ≥  ${roundInt(finalCutoffs.AB)}`,
   });
 
   const mids = [
@@ -101,33 +132,37 @@ export function buildGradeRanges(finalCutoffs, mode) {
   ];
 
   for (const { grade, high, low } of mids) {
+    const highVal = roundInt(finalCutoffs[high]);
+    const lowVal = roundInt(finalCutoffs[low]);
     ranges.push({
       grade,
-      min: finalCutoffs[low],
-      max: finalCutoffs[high],
-      label: `${grade}  ${finalCutoffs[low]} ~ ${round1(finalCutoffs[high] - 0.1)}`,
+      min: lowVal,
+      max: highVal,
+      label: `${grade}  ${lowVal} ~ ${highVal - 1}`,
     });
   }
 
   if (mode === GRADE_MODE_SIX) {
+    const eFail = roundInt(finalCutoffs.E_fail);
+    const deVal = roundInt(finalCutoffs.DE);
     ranges.push({
       grade: "E",
-      min: finalCutoffs.E_fail,
-      max: finalCutoffs.DE,
-      label: `E  ${finalCutoffs.E_fail} ~ ${round1(finalCutoffs.DE - 0.1)}`,
+      min: eFail,
+      max: deVal,
+      label: `E  ${eFail} ~ ${deVal - 1}`,
     });
     ranges.push({
       grade: "미도달",
       min: 0,
-      max: finalCutoffs.E_fail,
-      label: `미도달  <  ${finalCutoffs.E_fail}`,
+      max: eFail,
+      label: `미도달  <  ${eFail}`,
     });
   } else {
     ranges.push({
       grade: "E",
       min: 0,
-      max: finalCutoffs.DE,
-      label: `E  <  ${finalCutoffs.DE}`,
+      max: roundInt(finalCutoffs.DE),
+      label: `E  <  ${roundInt(finalCutoffs.DE)}`,
     });
   }
 
@@ -135,7 +170,7 @@ export function buildGradeRanges(finalCutoffs, mode) {
 }
 
 export function predictGrade(score, finalCutoffs, mode) {
-  const s = round1(score);
+  const s = roundInt(score);
   if (!Number.isFinite(s)) return { grade: null, error: "점수가 올바르지 않습니다." };
 
   if (s >= finalCutoffs.AB) return { grade: "A", score: s };

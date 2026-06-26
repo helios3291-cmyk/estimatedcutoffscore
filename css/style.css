@@ -478,6 +478,61 @@ header h1 {
   font-size: 0.85rem;
 }
 
+.pass-rate-table {
+  font-size: 0.85rem;
+}
+
+.pass-rate-table th {
+  white-space: nowrap;
+}
+
+.pass-rate-table .qnums {
+  text-align: left;
+  font-size: 0.8rem;
+  max-width: 180px;
+}
+
+.rate-cell-input {
+  width: 3.2rem;
+  padding: 0.35rem 0.25rem;
+  border: 1px solid #cbd5e0;
+  border-radius: 8px;
+  text-align: center;
+  font-size: 0.9rem;
+}
+
+.rate-cell-input:focus {
+  outline: none;
+  border-color: #4299e1;
+  box-shadow: 0 0 0 2px rgba(66, 153, 225, 0.2);
+}
+
+.rate-input-warn,
+.grade-col-warn {
+  border-color: #fc8181;
+}
+
+.pass-rate-table tfoot td {
+  background: #f7fafc;
+  font-weight: 600;
+}
+
+.pass-rate-table .footer-target td:not(:first-child) {
+  color: #2b6cb0;
+}
+
+.pass-rate-table .expected-match {
+  color: #276749;
+}
+
+.pass-rate-table .expected-mismatch {
+  color: #c53030;
+}
+
+.tier-row-low td:nth-child(2) { border-left: 3px solid #38a169; }
+.tier-row-mid td:nth-child(2) { border-left: 3px solid #d69e2e; }
+.tier-row-high td:nth-child(2) { border-left: 3px solid #e53e3e; }
+
 @media (max-width: 768px) {
   .weights-grid,
   .difficulty-counts,

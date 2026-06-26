@@ -14,7 +14,7 @@ const exam2 = { AB: 88, BC: 72, CD: 58, DE: 42 };
 const perf = { AB: 36, BC: 28, CD: 22, DE: 16 };
 
 const final = combineCutoffs(exam1, exam2, perf, config, GRADE_MODE_FIVE);
-console.assert(final.AB === 89.4, `AB expected 89.4 got ${final.AB}`);
+console.assert(final.AB === 89, `AB expected 89 got ${final.AB}`);
 
 const points = { 하: 30, 중: 50, 상: 20 };
 const cutoffs = { AB: 85, BC: 70, CD: 55, DE: 40 };

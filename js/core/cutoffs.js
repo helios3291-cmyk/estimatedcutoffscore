@@ -1,4 +1,4 @@
-import { round1, getBoundaryKeys, validateCutoffs } from "./grades.js";
+import { round1, getBoundaryKeys, validateCutoffs, roundInt } from "./grades.js";
 
 export function defaultComponentConfig() {
   return {
@@ -29,7 +29,7 @@ export function combineCutoffs(exam1, exam2, perf, config, mode) {
   const result = {};
 
   for (const key of keys) {
-    result[key] = round1(
+    result[key] = roundInt(
       contribute(exam1[key], config.exam1) +
         contribute(exam2[key], config.exam2) +
         contribute(perf[key], config.perf)
@@ -77,7 +77,7 @@ export function solveExam2Cutoffs(finalTarget, exam1, perf, config, mode) {
 }
 
 export function computeWeightedScore(exam1, exam2, perf, config) {
-  return round1(
+  return roundInt(
     contribute(exam1, config.exam1) +
       contribute(exam2, config.exam2) +
       contribute(perf, config.perf)
