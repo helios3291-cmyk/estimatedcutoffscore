@@ -26,13 +26,13 @@ export function initExam2Tuner(app) {
 
     <div class="components-grid two-col">
       <section class="card">
-        <h2>정기시험1 분할점수 (고정)</h2>
+        <h2>정기시험1 분할점수 (확정)</h2>
         <p id="tuner-hint-exam1" class="component-max-hint"></p>
         <div id="tuner-exam1" class="boundaries-grid"></div>
         <button type="button" id="tuner-load-exam1" class="secondary-btn small-btn">기본 산출에서 불러오기</button>
       </section>
       <section class="card">
-        <h2>수행평가 분할점수 (고정)</h2>
+        <h2>수행평가 분할점수 (확정)</h2>
         <p id="tuner-hint-perf" class="component-max-hint"></p>
         <div id="tuner-perf" class="boundaries-grid"></div>
         <button type="button" id="tuner-load-perf" class="secondary-btn small-btn">기본 산출에서 불러오기</button>
@@ -47,13 +47,13 @@ export function initExam2Tuner(app) {
     </section>
 
     <section class="card">
-      <button type="button" id="calc-tuner" class="primary-btn">정기시험2 분할점수 조율</button>
+      <button type="button" id="calc-tuner" class="primary-btn">정기시험2 분할점수 초안 계산</button>
       <p id="tuner-error" class="error-msg" hidden></p>
     </section>
 
     <section id="tuner-result" class="card" hidden>
       <div class="card-head-row">
-        <h2>조율 결과</h2>
+        <h2>초안 결과</h2>
         <button type="button" id="apply-tuner-basic" class="primary-btn small-btn">기본 산출에 적용</button>
       </div>
       <p id="tuner-exam2-hint" class="component-max-hint"></p>
@@ -64,10 +64,10 @@ export function initExam2Tuner(app) {
           <tbody></tbody>
         </table>
       </div>
-      <h3 class="sub-heading">비교: 조율 전 vs 조율 후 최종</h3>
+      <h3 class="sub-heading">비교: 초안 반영 전 vs 초안 반영 후 최종</h3>
       <div class="table-wrap">
         <table class="data-table" id="tuner-compare-table">
-          <thead><tr><th>경계</th><th>정기1+수행만 반영</th><th>목표 최종</th><th>조율 후 최종</th></tr></thead>
+          <thead><tr><th>경계</th><th>정기1+수행만 반영</th><th>목표 최종</th><th>초안 반영 후 최종</th></tr></thead>
           <tbody></tbody>
         </table>
       </div>
@@ -221,7 +221,7 @@ export function initExam2Tuner(app) {
 
   document.getElementById("apply-tuner-basic").addEventListener("click", () => {
     if (!app.tunerResult?.exam2Suggested) {
-      alert("먼저 조율을 실행해 주세요.");
+      alert("먼저 초안을 계산해 주세요.");
       return;
     }
     pushExamCutoffToSession("mid2", app.tunerResult.exam2Suggested);

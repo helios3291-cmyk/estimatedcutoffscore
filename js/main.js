@@ -93,17 +93,11 @@ function switchTab(tabId) {
   persist();
 }
 
-app.switchTab = switchTab;
-
 function onGradeModeChange(mode) {
   app.gradeMode = mode;
   app.gradeModeCallbacks.forEach((fn) => fn());
   persist();
 }
-
-document.querySelectorAll(".tab-btn").forEach((btn) => {
-  btn.addEventListener("click", () => switchTab(btn.dataset.tab));
-});
 
 document.querySelectorAll('input[name="grade-mode"]').forEach((el) => {
   el.addEventListener("change", () => {
@@ -118,4 +112,9 @@ initStudentPredict(app);
 
 restore();
 
+document.querySelectorAll(".tab-btn").forEach((btn) => {
+  btn.addEventListener("click", () => switchTab(btn.dataset.tab));
+});
+
+app.switchTab = switchTab;
 window.__cutoffApp = app;

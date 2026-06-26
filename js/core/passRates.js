@@ -7,6 +7,7 @@ import {
   gradeColumnsForMode,
   TIER_LABELS_KO,
   GRADE_MODE_SIX,
+  snapRatePercent,
 } from "./grades.js";
 
 const TEMPLATE_BASE = { 하: 0.95, 중: 0.78, 상: 0.55 };
@@ -176,7 +177,7 @@ export function passRatesToMatrix(passRates, mode) {
     if (!grade || !passRates[boundary]) continue;
     matrix[grade] = {};
     for (const tier of TIER_ORDER) {
-      matrix[grade][tier] = Math.round((passRates[boundary][tier] || 0) * 100);
+      matrix[grade][tier] = snapRatePercent((passRates[boundary][tier] || 0) * 100);
     }
   }
 

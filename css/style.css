@@ -529,9 +529,9 @@ header h1 {
   color: #c53030;
 }
 
-.tier-row-low td:nth-child(2) { border-left: 3px solid #38a169; }
-.tier-row-mid td:nth-child(2) { border-left: 3px solid #d69e2e; }
-.tier-row-high td:nth-child(2) { border-left: 3px solid #e53e3e; }
+.tier-label-high { border-left: 3px solid #e53e3e; }
+.tier-label-mid { border-left: 3px solid #d69e2e; }
+.tier-label-low { border-left: 3px solid #38a169; }
 
 @media (max-width: 768px) {
   .weights-grid,

@@ -5,6 +5,9 @@ import {
   validateCutoffs,
   TIER_ORDER,
   TIER_KEYS,
+  gradeColumnsForMode,
+  boundaryForGradeColumn,
+  snapRatePercent,
 } from "../core/grades.js";
 import {
   aggregatePointsByDifficulty,
@@ -26,7 +29,6 @@ import {
   pushExamCutoffToSession,
 } from "../io/export.js";
 import { applyExamCutoffsToBasic } from "./basic.js";
-import { gradeColumnsForMode, boundaryForGradeColumn, TIER_KEYS } from "../core/grades.js";
 
 const EXAM_LABELS = { mid1: "정기시험1", mid2: "정기시험2" };
 
@@ -130,7 +132,7 @@ export function initExamHelper(app) {
     if (extra.E_fail) {
       matrix.E = {};
       for (const tier of TIER_ORDER) {
-        matrix.E[tier] = Math.round((extra.E_fail[tier] || 0) * 100);
+        matrix.E[tier] = snapRatePercent((extra.E_fail[tier] || 0) * 100);
       }
     }
     return matrix;
@@ -285,7 +287,7 @@ export function initExamHelper(app) {
     headerSpan.textContent = "최소능력자 예상정답률(%)";
 
     document.getElementById("grade-col-header").innerHTML = gradeCols
-      .map((g) => `<th class="grade-col${g === "E" || g === "미도달" ? " grade-col-warn" : ""}">${g}</th>`)
+      .map((g) => `<th class="grade-col">${g}</th>`)
       .join("");
 
     const typeRowspan = new Map();
@@ -310,12 +312,11 @@ export function initExamHelper(app) {
         const rateCells = gradeCols
           .map((grade) => {
             const val = matrix[grade]?.[row.tier] ?? 0;
-            const warn = grade === "E" || grade === "미도달" ? " rate-input-warn" : "";
             return `
             <td>
-              <input type="number" class="rate-cell-input${warn}"
+              <input type="number" class="rate-cell-input"
                 data-tier="${row.tier}" data-grade="${grade}"
-                min="0" max="100" step="1" value="${val}">
+                min="0" max="100" step="5" value="${val}">
             </td>`;
           })
           .join("");
@@ -323,7 +324,7 @@ export function initExamHelper(app) {
         return `
         <tr class="tier-row tier-row-${TIER_KEYS[row.tier]}">
           ${typeCell}
-          <td>${row.tierLabel}</td>
+          <td class="tier-label tier-label-${TIER_KEYS[row.tier]}">${row.tierLabel}</td>
           <td class="qnums">${row.questionNums}</td>
           <td>${row.questionCount}</td>
           <td>${row.pointsSum}</td>
@@ -337,12 +338,34 @@ export function initExamHelper(app) {
     document.querySelectorAll(".rate-cell-input").forEach((input) => {
       input.addEventListener("input", () => onRateCellChange(input, tierRows, cutoffs));
     });
+    updateRateWarnings(matrix, gradeCols);
+  }
+
+  function updateRateWarnings(matrix, gradeCols) {
+    document.querySelectorAll(".rate-cell-input").forEach((input) => {
+      input.classList.remove("rate-input-warn");
+    });
+
+    for (const tier of TIER_ORDER) {
+      for (let i = 1; i < gradeCols.length; i++) {
+        const upper = gradeCols[i - 1];
+        const grade = gradeCols[i];
+        const upperRate = matrix[upper]?.[tier] ?? 0;
+        const rate = matrix[grade]?.[tier] ?? 0;
+        if (upperRate - rate >= 20) {
+          const input = document.querySelector(
+            `.rate-cell-input[data-tier="${tier}"][data-grade="${grade}"]`
+          );
+          input?.classList.add("rate-input-warn");
+        }
+      }
+    }
   }
 
   function onRateCellChange(input, tierRows, cutoffs) {
     const tier = input.dataset.tier;
     const grade = input.dataset.grade;
-    const val = Math.max(0, Math.min(100, parseInt(input.value, 10) || 0));
+    const val = snapRatePercent(parseInt(input.value, 10) || 0);
     input.value = val;
 
     if (!app.helperState.passRateMatrix[grade]) {
@@ -354,7 +377,9 @@ export function initExamHelper(app) {
       app.helperState.passRateMatrix,
       app.gradeMode
     );
+    const gradeCols = gradeColumnsForMode(app.gradeMode);
     renderPassRateFooter(tierRows, app.helperState.passRateMatrix, cutoffs);
+    updateRateWarnings(app.helperState.passRateMatrix, gradeCols);
     persistHelper(app);
   }
 

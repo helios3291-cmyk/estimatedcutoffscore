@@ -25,6 +25,14 @@ export function roundInt(n) {
   return Math.round(n);
 }
 
+export function snapRatePercent(n) {
+  return Math.max(0, Math.min(100, Math.round(n / 5) * 5));
+}
+
+export function snapScore5(n, max) {
+  return Math.max(0, Math.min(max, Math.round(n / 5) * 5));
+}
+
 export const TIER_LABELS_KO = { 하: "쉬움", 중: "보통", 상: "어려움" };
 
 export const GRADE_FOR_BOUNDARY = {
@@ -108,7 +116,7 @@ export function validateWeights(weights) {
   }
 
   if (exam2 === 0) {
-    issues.push("정기시험2 반영 비율이 0%이면 정기2 조율 기능을 사용할 수 없습니다.");
+    issues.push("정기시험2 반영 비율이 0%이면 정기시험2 초안 도우미 기능을 사용할 수 없습니다.");
   }
 
   return issues;

@@ -130,7 +130,7 @@ export function initBasic(app) {
       <section class="card component-card">
         <div class="card-head-row">
           <h2>정기시험2 분할점수</h2>
-          <button type="button" class="secondary-btn small-btn" id="load-exam2-session">도우미/조율 결과 불러오기</button>
+          <button type="button" class="secondary-btn small-btn" id="load-exam2-session">도우미/초안 결과 불러오기</button>
         </div>
         <p class="component-max-hint" id="hint-exam2">만점 100점 척도</p>
         <div id="exam2-boundaries" class="boundaries-grid"></div>
@@ -360,7 +360,7 @@ async function importExam(e, prefix, app) {
 function loadSession(exam, prefix, app) {
   const cutoffs = pullExamCutoffFromSession(exam);
   if (!cutoffs) {
-    alert("저장된 결과가 없습니다. 정기시험 도우미 또는 정기2 조율에서 먼저 적용해 주세요.");
+    alert("저장된 결과가 없습니다. 정기시험 도우미 또는 정기시험2 초안 도우미에서 먼저 적용해 주세요.");
     return;
   }
   writeComponentCutoffs(prefix, cutoffs, app.gradeMode);

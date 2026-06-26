@@ -1,4 +1,4 @@
-import { round1, getBoundaryKeys, validateCutoffs, roundInt } from "./grades.js";
+import { round1, getBoundaryKeys, validateCutoffs, roundInt, snapScore5 } from "./grades.js";
 
 export function defaultComponentConfig() {
   return {
@@ -61,7 +61,7 @@ export function solveExam2Cutoffs(finalTarget, exam1, perf, config, mode) {
     const other =
       contribute(exam1[key], config.exam1) + contribute(perf[key], config.perf);
     const raw = ((finalTarget[key] - other) * c2.max) / c2.weight;
-    result[key] = round1(raw);
+    result[key] = snapScore5(raw, c2.max);
 
     if (result[key] < 0 || result[key] > c2.max) {
       issues.push(
@@ -106,7 +106,7 @@ export function validateComponentConfig(config) {
   }
 
   if (config.exam2.weight === 0) {
-    issues.push("정기시험2 반영 비율이 0%이면 정기2 조율 기능을 사용할 수 없습니다.");
+    issues.push("정기시험2 반영 비율이 0%이면 정기시험2 초안 도우미 기능을 사용할 수 없습니다.");
   }
 
   return issues;

@@ -24,8 +24,11 @@ console.assert(Math.abs(abScore - 85) < 1, `AB pass rate score expected ~85 got 
 
 const target = { ...final, AB: 88 };
 const { cutoffs: exam2Solved } = solveExam2Cutoffs(target, exam1, perf, config, GRADE_MODE_FIVE);
+for (const k of Object.keys(exam2Solved)) {
+  console.assert(exam2Solved[k] % 5 === 0, `exam2 ${k} expected multiple of 5 got ${exam2Solved[k]}`);
+}
 const after = combineCutoffs(exam1, exam2Solved, perf, config, GRADE_MODE_FIVE);
-console.assert(after.AB === 88, `tuned AB expected 88 got ${after.AB}`);
+console.assert(after.AB === 89, `tuned AB expected 89 got ${after.AB}`);
 
 const student = predictStudentGrade(
   { exam1: 95, exam2: 85, perf: 36 },
