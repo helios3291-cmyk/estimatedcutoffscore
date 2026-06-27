@@ -26,10 +26,15 @@ import {
   GRADE_MODE_FIVE,
   GRADE_MODE_SIX,
   snapCutoffsMonotonic,
+  normalizeFinalCutoffs,
   MIN_PASS_RATE_PERCENT,
 } from "./js/core/grades.js";
 
 const config = defaultComponentConfig();
+console.assert(
+  normalizeFinalCutoffs({ AB: 89.4, BC: 74.6, CD: 59.2, DE: 44.8 }, GRADE_MODE_FIVE).AB === 89,
+  "normalizeFinalCutoffs rounds to int"
+);
 const exam1 = { AB: 90, BC: 75, CD: 60, DE: 45 };
 const exam2 = { AB: 88, BC: 72, CD: 58, DE: 42 };
 const perf = { AB: 36, BC: 28, CD: 22, DE: 16 };

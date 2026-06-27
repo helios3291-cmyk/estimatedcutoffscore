@@ -114,6 +114,16 @@ export function getBoundaryKeys(mode) {
   return mode === GRADE_MODE_SIX ? BOUNDARY_KEYS_SIX : BOUNDARY_KEYS_FIVE;
 }
 
+/** 최종 분할점수 — 소수 첫째 자리 반올림 정수 */
+export function normalizeFinalCutoffs(cutoffs, mode) {
+  const keys = getBoundaryKeys(mode);
+  const out = {};
+  for (const k of keys) {
+    out[k] = cutoffs?.[k] != null ? roundInt(cutoffs[k]) : null;
+  }
+  return out;
+}
+
 export function parseScore(value) {
   if (value === "" || value === null || value === undefined) return null;
   const n = parseFloat(value);

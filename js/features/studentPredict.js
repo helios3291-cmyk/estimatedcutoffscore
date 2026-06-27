@@ -1,5 +1,5 @@
 import { predictStudentGrade } from "../core/student.js";
-import { BOUNDARY_LABELS, getBoundaryKeys } from "../core/grades.js";
+import { BOUNDARY_LABELS, getBoundaryKeys, normalizeFinalCutoffs, roundInt } from "../core/grades.js";
 import { getConfigForApp } from "./basic.js";
 import { perfWeightSum } from "../core/cutoffs.js";
 
@@ -44,6 +44,15 @@ function updateScoreInputLimits(config) {
   }
 }
 
+function fillCutoffInputs(cutoffs, mode) {
+  const normalized = normalizeFinalCutoffs(cutoffs, mode);
+  for (const k of getBoundaryKeys(mode)) {
+    const el = document.getElementById(`sc-${k}`);
+    if (el && normalized[k] != null) el.value = normalized[k];
+  }
+  return normalized;
+}
+
 export function initStudentPredict(app) {
   const root = document.getElementById("panel-student");
   root.innerHTML = `
@@ -55,12 +64,11 @@ export function initStudentPredict(app) {
       </div>
       <div id="student-perf-inputs" class="weights-grid"></div>
       <p id="student-weight-display" class="weight-display"></p>
-      <button type="button" id="load-final-cutoffs" class="secondary-btn small-btn">기본 산출 최종 분할점수 불러오기</button>
     </section>
 
     <section class="card">
       <h2>최종 분할점수 (판정 기준)</h2>
-      <p class="notice">기본 산출 탭에서 계산한 값을 자동으로 불러오거나 직접 입력할 수 있습니다.</p>
+      <p class="notice">기본 산출 탭에서 산출한 최종 분할점수를 「성취도 예측」 시 자동 반영합니다 (정수).</p>
       <div id="student-cutoffs" class="boundaries-grid"></div>
       <button type="button" id="calc-student" class="primary-btn">성취도 예측</button>
       <p id="student-error" class="error-msg" hidden></p>
@@ -87,13 +95,14 @@ export function initStudentPredict(app) {
 
   function renderCutoffInputs() {
     const keys = getBoundaryKeys(app.gradeMode);
-    const cutoffs = app.studentState?.finalCutoffs || app.finalCutoffs || {};
+    const raw = app.studentState?.finalCutoffs || app.finalCutoffs || {};
+    const cutoffs = normalizeFinalCutoffs(raw, app.gradeMode);
     document.getElementById("student-cutoffs").innerHTML = keys
       .map(
         (k) => `
       <div class="field boundary-field">
         <label for="sc-${k}">${BOUNDARY_LABELS[k]}</label>
-        <input type="number" id="sc-${k}" min="0" max="100" step="0.1" value="${cutoffs[k] ?? ""}">
+        <input type="number" id="sc-${k}" min="0" max="100" step="1" value="${cutoffs[k] ?? ""}">
       </div>`
       )
       .join("");
@@ -107,7 +116,7 @@ export function initStudentPredict(app) {
       o[k] = parseFloat(document.getElementById(`sc-${k}`)?.value);
       if (!Number.isFinite(o[k])) o[k] = null;
     }
-    return o;
+    return normalizeFinalCutoffs(o, app.gradeMode);
   }
 
   function readPerfScores() {
@@ -130,15 +139,22 @@ export function initStudentPredict(app) {
     const errEl = document.getElementById("student-error");
     const resultEl = document.getElementById("student-result");
 
+    if (!app.finalCutoffs) {
+      errEl.textContent = "기본 산출 탭에서 최종 분할점수를 먼저 산출해 주세요.";
+      errEl.hidden = false;
+      resultEl.hidden = true;
+      return;
+    }
+
+    const finalCutoffs = fillCutoffInputs(app.finalCutoffs, app.gradeMode);
+
     const scores = {
       exam1: parseFloat(document.getElementById("s-exam1").value),
       exam2: parseFloat(document.getElementById("s-exam2").value),
       perfAreas: readPerfScores(),
     };
 
-    const finalCutoffs = readFinalCutoffs();
     const config = getConfigForApp(app);
-
     const result = predictStudentGrade(scores, config, finalCutoffs, app.gradeMode);
 
     if (result.error) {
@@ -170,7 +186,7 @@ export function initStudentPredict(app) {
         (d) => `
       <tr>
         <td>${d.boundary}</td>
-        <td>${d.value}</td>
+        <td>${roundInt(d.value)}</td>
         <td class="${d.diff >= 0 ? "diff-pos" : "diff-neg"}">${d.diff >= 0 ? "+" : ""}${d.diff}</td>
       </tr>`
       )
@@ -201,19 +217,6 @@ export function initStudentPredict(app) {
 
   document.getElementById("calc-student").addEventListener("click", calculateStudent);
 
-  document.getElementById("load-final-cutoffs").addEventListener("click", () => {
-    if (!app.finalCutoffs) {
-      alert("기본 산출 탭에서 먼저 최종 분할점수를 계산해 주세요.");
-      return;
-    }
-    const keys = getBoundaryKeys(app.gradeMode);
-    for (const k of keys) {
-      const el = document.getElementById(`sc-${k}`);
-      if (el) el.value = app.finalCutoffs[k];
-    }
-    persistStudent(app);
-  });
-
   ["s-exam1", "s-exam2"].forEach((id) => {
     document.getElementById(id).addEventListener("input", () => persistStudent(app));
   });
@@ -225,13 +228,6 @@ export function initStudentPredict(app) {
 
   app.registerStateChange(() => {
     updateWeightDisplay();
-    if (app.finalCutoffs) {
-      const keys = getBoundaryKeys(app.gradeMode);
-      for (const k of keys) {
-        const el = document.getElementById(`sc-${k}`);
-        if (el && !el.value) el.value = app.finalCutoffs[k];
-      }
-    }
   });
 
   if (app.studentState?.scores) {

@@ -380,14 +380,6 @@ export function parsePasteText(text) {
   return parseScoreGrid(rows);
 }
 
-export function parseWorkbookSheet(sheet) {
-  if (typeof XLSX === "undefined") {
-    return { students: [], issues: ["엑셀 라이브러리를 불러오지 못했습니다."] };
-  }
-  const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
-  return parseScoreGrid(rows);
-}
-
 export function validStudentTotals(students) {
   return students.filter((s) => !s.excluded && Number.isFinite(s.total)).map((s) => s.total);
 }

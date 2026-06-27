@@ -12,23 +12,19 @@ import {
 } from "../core/gradeDistribution.js";
 import {
   parsePasteText,
-  parseWorkbookSheet,
   validStudentTotals,
   summarizeStudentData,
   alignStudentsById,
 } from "../core/studentData.js";
-import { applyExamCutoffsToBasic, getConfigForApp, getPerfCutoffsForApp } from "./basic.js";
+import {
+  applyExamCutoffsToBasic,
+  getConfigForApp,
+  syncSemesterCutoffsFromBasic,
+} from "./basic.js";
 import { pushExamCutoffToSession } from "../io/export.js";
 
 function getConfig(app) {
   return getConfigForApp(app);
-}
-
-function getBasicCutoffs(app, component) {
-  if (component === "perfAreas") {
-    return getPerfCutoffsForApp(app);
-  }
-  return app.components?.[component] || app.basicState?.[component] || null;
 }
 
 function ratioTableHtml(ratios, counts, total) {
@@ -61,7 +57,6 @@ function renderPerfInputSections(app) {
     return `
       <div class="perf-input-block">
         <h3 class="sub-heading">${label}</h3>
-        <input type="file" id="sf-perf-file-${i}" accept=".xlsx,.xls,.csv" class="file-input">
         <textarea id="sf-perf-paste-${i}" class="paste-area" rows="5" placeholder="엑셀에서 복사한 범위를 붙여 넣으세요">${pastes[i] ?? ""}</textarea>
         <p id="sf-perf-stats-${i}" class="component-max-hint"></p>
       </div>`;
@@ -82,10 +77,9 @@ export function initExam2Tuner(app) {
   root.innerHTML = `
     <section class="card">
       <h2>학생 성적 데이터 입력</h2>
-      <p class="notice">엑셀 파일 업로드 또는 시트 범위 복사·붙여넣기(탭/쉼표 구분). <strong>반×번호 행렬</strong>(모서리 <code>반/번호</code>, 열=1·2·3… 또는 1반·2반…, 행=번호, 셀=학생 총점) 또는 <strong>문항별 행</strong>(첫 열=번호, 이후 열=문항 점수 합산) 형식을 지원합니다. 미인정결·질병결·자퇴 등은 해당 학생만 비율 계산에서 제외됩니다. 수행평가 영역 수는 <strong>기본 산출 탭</strong> 설정을 따릅니다.</p>
+      <p class="notice">엑셀에서 시트 범위를 <strong>복사·붙여넣기</strong>(탭/쉼표 구분). <strong>반×번호 행렬</strong>(모서리 <code>반/번호</code>, 열=1·2·3… 또는 1반·2반…, 행=번호, 셀=학생 총점) 또는 <strong>문항별 행</strong>(첫 열=번호, 이후 열=문항 점수 합산) 형식을 지원합니다. 미인정결·질병결·자퇴 등은 해당 학생만 비율 계산에서 제외됩니다. 수행평가 영역 수는 <strong>기본 산출 탭</strong> 설정을 따릅니다.</p>
       <div>
         <h3 class="sub-heading">정기시험1</h3>
-        <input type="file" id="sf-exam1-file" accept=".xlsx,.xls,.csv" class="file-input">
         <textarea id="sf-exam1-paste" class="paste-area" rows="6" placeholder="엑셀에서 복사한 범위를 붙여 넣으세요"></textarea>
         <p id="sf-exam1-stats" class="component-max-hint"></p>
       </div>
@@ -95,14 +89,7 @@ export function initExam2Tuner(app) {
     </section>
 
     <section class="card">
-      <h2>분할점수 (기본 산출 탭)</h2>
-      <p class="notice">기본 산출 탭의 최종 분할점수·정기1·수행·정기2 분할점수를 사용합니다.</p>
-      <p id="sf-cutoff-status" class="weight-display"></p>
-      <button type="button" id="sf-load-cutoffs" class="secondary-btn small-btn">기본 산출에서 불러오기</button>
-    </section>
-
-    <section class="card">
-      <button type="button" id="sf-calc-ratios" class="primary-btn">성취도 비율 계산</button>
+      <button type="button" id="sf-calc-ratios" class="primary-btn full-width">정기시험1 및 수행평가 점수 기반 학생 성적 분석</button>
       <p id="sf-ratio-error" class="error-msg" hidden></p>
     </section>
 
@@ -186,72 +173,19 @@ export function initExam2Tuner(app) {
     return parseTargetRatios(inputs, app.gradeMode);
   }
 
-  function updateCutoffStatus() {
-    const e1 = app.semesterState.exam1Cutoffs;
-    const pf = app.semesterState.perfCutoffs;
-    const config = getConfig(app);
-    const el = document.getElementById("sf-cutoff-status");
-    const pfOk = Array.isArray(pf) && pf.length === config.perfCount && pf.every(Boolean);
-    const partialMax = partialWeightMax(config);
-
-    if (e1 && pfOk) {
-      el.textContent = `정기1·수행 ${config.perfCount}개 영역 분할점수 준비됨 (정기1+수행 만점 ${partialMax}%).`;
-      return;
-    }
-    if (e1) {
-      el.textContent = "정기1 분할점수만 준비됨. (정기1만 반영한 비율 계산 가능)";
-      return;
-    }
-    el.textContent = "기본 산출 탭에서 분할점수를 불러와 주세요.";
-  }
-
-  function loadCutoffsFromBasic() {
-    const e1 = getBasicCutoffs(app, "exam1");
-    const pf = getBasicCutoffs(app, "perfAreas");
-    const e2 = getBasicCutoffs(app, "exam2");
-    const config = getConfig(app);
-
-    if (!e1) {
-      alert("기본 산출 탭에 정기1 분할점수를 먼저 입력해 주세요.");
-      return;
-    }
-    app.semesterState.exam1Cutoffs = { ...e1 };
-    app.semesterState.perfCutoffs =
-      pf.length === config.perfCount ? pf.map((p) => ({ ...p })) : null;
-    app.semesterState.exam2Cutoffs = e2 ? { ...e2 } : null;
-    app.semesterState.finalCutoffs = app.finalCutoffs ? { ...app.finalCutoffs } : null;
-    updateCutoffStatus();
-    renderPerfInputSections(app);
-    app.persist?.();
-  }
-
-  async function handleFile(file) {
-    if (!file) return null;
-    const data = await file.arrayBuffer();
-    const wb = XLSX.read(data, { type: "array" });
-    const sheet = wb.Sheets[wb.SheetNames[0]];
-    return parseWorkbookSheet(sheet);
-  }
-
-  async function parseDataInputs() {
+  function parseDataInputs() {
     const errEl = document.getElementById("sf-parse-error");
     errEl.hidden = true;
 
     const config = getConfig(app);
     const count = config.perfCount || 1;
 
-    let exam1Parsed = parsePasteText(document.getElementById("sf-exam1-paste").value);
+    const exam1Parsed = parsePasteText(document.getElementById("sf-exam1-paste").value);
     const perfParsedList = [];
 
     for (let i = 0; i < count; i++) {
-      let parsed = parsePasteText(document.getElementById(`sf-perf-paste-${i}`)?.value || "");
-      const f = document.getElementById(`sf-perf-file-${i}`)?.files[0];
-      if (f) parsed = await handleFile(f);
-      perfParsedList.push(parsed);
+      perfParsedList.push(parsePasteText(document.getElementById(`sf-perf-paste-${i}`)?.value || ""));
     }
-
-    const f1 = document.getElementById("sf-exam1-file").files[0];
-    if (f1) exam1Parsed = await handleFile(f1);
 
     const issues = [...(exam1Parsed.issues || [])];
     perfParsedList.forEach((p, i) => {
@@ -301,17 +235,19 @@ export function initExam2Tuner(app) {
     const combinedEl = document.getElementById("sf-ratio-combined");
     const combinedSkipEl = document.getElementById("sf-ratio-combined-skip");
     const combinedDescEl = document.getElementById("sf-ratio-combined-desc");
-    const e1 = app.semesterState.exam1Cutoffs;
-    const pf = app.semesterState.perfCutoffs;
-    const config = getConfig(app);
-    const partialMax = partialWeightMax(config);
 
-    if (!e1) {
-      errEl.textContent = "먼저 기본 산출에서 분할점수를 불러오세요.";
+    const sync = syncSemesterCutoffsFromBasic(app);
+    if (!sync.ok) {
+      errEl.textContent = sync.error;
       errEl.hidden = false;
       resultEl.hidden = true;
       return;
     }
+
+    const e1 = app.semesterState.exam1Cutoffs;
+    const pf = app.semesterState.perfCutoffs;
+    const config = getConfig(app);
+    const partialMax = partialWeightMax(config);
 
     const exam1Scores = validStudentTotals(app.semesterState.exam1Students);
 
@@ -381,6 +317,14 @@ export function initExam2Tuner(app) {
 
     if (error) {
       errEl.textContent = error;
+      errEl.hidden = false;
+      resultEl.hidden = true;
+      return;
+    }
+
+    const sync = syncSemesterCutoffsFromBasic(app);
+    if (!sync.ok) {
+      errEl.textContent = sync.error;
       errEl.hidden = false;
       resultEl.hidden = true;
       return;
@@ -465,7 +409,6 @@ export function initExam2Tuner(app) {
   }
 
   document.getElementById("sf-parse-data").addEventListener("click", () => parseDataInputs());
-  document.getElementById("sf-load-cutoffs").addEventListener("click", loadCutoffsFromBasic);
   document.getElementById("sf-calc-ratios").addEventListener("click", calcRatios);
   document.getElementById("sf-calc-exam2").addEventListener("click", calcExam2Targets);
 
@@ -483,17 +426,14 @@ export function initExam2Tuner(app) {
 
   app.registerGradeModeChange(() => {
     renderTargetRatioInputs();
-    updateCutoffStatus();
   });
 
   app.registerStateChange(() => {
     renderPerfInputSections(app);
-    updateCutoffStatus();
   });
 
   renderTargetRatioInputs();
   renderPerfInputSections(app);
-  updateCutoffStatus();
 
   if (app.semesterState.exam1Paste) {
     document.getElementById("sf-exam1-paste").value = app.semesterState.exam1Paste;

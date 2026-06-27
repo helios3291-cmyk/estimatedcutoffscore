@@ -28,8 +28,6 @@ import {
   computeExamCutoffsFromPassMatrix,
 } from "../core/passRates.js";
 import {
-  downloadJson,
-  buildExamCutoffExport,
   buildExamHelperExcelRows,
   exportToExcel,
   pushExamCutoffToSession,
@@ -93,7 +91,6 @@ export function initExamHelper(app) {
       <div class="card-head-row">
         <h2>성취도별 · 난이도별 예상 통과율</h2>
         <div class="btn-group">
-          <button type="button" id="export-helper-json" class="secondary-btn small-btn">JSON 저장</button>
           <button type="button" id="export-helper-excel" class="secondary-btn small-btn">엑셀 저장</button>
           <button type="button" id="apply-helper-basic" class="primary-btn small-btn">기본 산출에 적용</button>
         </div>
@@ -519,21 +516,6 @@ export function initExamHelper(app) {
   });
 
   document.getElementById("calc-helper").addEventListener("click", calculateHelper);
-
-  document.getElementById("export-helper-json").addEventListener("click", () => {
-    const exam = document.getElementById("helper-exam").value;
-    const data = buildExamCutoffExport(
-      exam,
-      app.helperState.inputMode,
-      app.helperState.points,
-      app.helperState.cutoffs,
-      app.helperState.passRates,
-      app.helperState.questions,
-      app.helperState.passRateMatrix,
-      app.helperState.tierRows
-    );
-    downloadJson(data, `exam_cutoff_${exam}.json`);
-  });
 
   document.getElementById("export-helper-excel").addEventListener("click", () => {
     try {

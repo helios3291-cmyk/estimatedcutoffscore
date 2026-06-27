@@ -1,57 +1,6 @@
 import { BOUNDARY_LABELS, passRateGradeColumnsForMode, boundaryForPassRateGrade } from "../core/grades.js";
 import { normalizeComponentConfig } from "../core/cutoffs.js";
 
-export function downloadJson(data, filename) {
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
-export function readJsonFile(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      try {
-        resolve(JSON.parse(reader.result));
-      } catch {
-        reject(new Error("JSON 파일을 읽을 수 없습니다."));
-      }
-    };
-    reader.onerror = () => reject(new Error("파일을 읽을 수 없습니다."));
-    reader.readAsText(file);
-  });
-}
-
-export function buildExamCutoffExport(exam, mode, pointsByDifficulty, cutoffs, passRates, questions, passRateMatrix, tierRows) {
-  return {
-    type: "exam_cutoff",
-    version: 2,
-    exam,
-    mode,
-    pointsByDifficulty,
-    cutoffs,
-    passRates,
-    passRateMatrix: passRateMatrix || null,
-    tierRows: tierRows || null,
-    questions: questions || null,
-    exportedAt: new Date().toISOString(),
-  };
-}
-
-export function parseExamCutoffImport(data) {
-  if (!data || data.type !== "exam_cutoff") {
-    return { error: "올바른 정기시험 분할점수 파일이 아닙니다." };
-  }
-  if (!data.cutoffs) {
-    return { error: "분할점수 데이터가 없습니다." };
-  }
-  return { data, error: null };
-}
-
 export function exportToExcel(wbName, sheets) {
   if (typeof XLSX === "undefined") {
     throw new Error("엑셀 라이브러리를 불러오지 못했습니다.");

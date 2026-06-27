@@ -16,8 +16,6 @@ import {
   perfWeightSum,
 } from "../core/cutoffs.js";
 import {
-  readJsonFile,
-  parseExamCutoffImport,
   pullExamCutoffFromSession,
   buildBasicExcelRows,
   exportToExcel,
@@ -217,22 +215,14 @@ export function initBasic(app) {
         </div>
         <p class="component-max-hint" id="hint-exam1">만점 100점 척도</p>
         <div id="exam1-boundaries" class="boundaries-grid"></div>
-        <div class="import-row">
-          <input type="file" id="import-exam1" accept=".json" hidden>
-          <button type="button" class="secondary-btn small-btn" id="btn-import-exam1">JSON 업로드</button>
-        </div>
       </section>
       <section class="card component-card">
         <div class="card-head-row">
           <h2>정기시험2 분할점수</h2>
-          <button type="button" class="secondary-btn small-btn" id="load-exam2-session">도우미/학기말 결과 불러오기</button>
+          <button type="button" class="secondary-btn small-btn" id="load-exam2-session">도우미/학생 성적 결과 불러오기</button>
         </div>
         <p class="component-max-hint" id="hint-exam2">만점 100점 척도</p>
         <div id="exam2-boundaries" class="boundaries-grid"></div>
-        <div class="import-row">
-          <input type="file" id="import-exam2" accept=".json" hidden>
-          <button type="button" class="secondary-btn small-btn" id="btn-import-exam2">JSON 업로드</button>
-        </div>
       </section>
     </div>
 
@@ -351,10 +341,6 @@ export function initBasic(app) {
   document.getElementById("export-basic-excel").addEventListener("click", () => exportBasic(app));
   document.getElementById("load-exam1-session").addEventListener("click", () => loadSession("mid1", "e1", app));
   document.getElementById("load-exam2-session").addEventListener("click", () => loadSession("mid2", "e2", app));
-  document.getElementById("btn-import-exam1").addEventListener("click", () => document.getElementById("import-exam1").click());
-  document.getElementById("btn-import-exam2").addEventListener("click", () => document.getElementById("import-exam2").click());
-  document.getElementById("import-exam1").addEventListener("change", (e) => importExam(e, "e1", app));
-  document.getElementById("import-exam2").addEventListener("change", (e) => importExam(e, "e2", app));
 
   bindConfigInputs(app, onPerfCountChange);
   updateWeightStatus();
@@ -548,29 +534,11 @@ function exportBasic(app) {
   }
 }
 
-async function importExam(e, prefix, app) {
-  const file = e.target.files?.[0];
-  if (!file) return;
-  try {
-    const data = await readJsonFile(file);
-    const { data: parsed, error } = parseExamCutoffImport(data);
-    if (error) {
-      alert(error);
-      return;
-    }
-    writeComponentCutoffs(prefix, parsed.cutoffs, app.gradeMode);
-    persistBasic(app);
-    calculate(app);
-  } catch (err) {
-    alert(err.message);
-  }
-  e.target.value = "";
-}
 
 function loadSession(exam, prefix, app) {
   const cutoffs = pullExamCutoffFromSession(exam);
   if (!cutoffs) {
-    alert("저장된 결과가 없습니다. 정기시험 추정분할점수 산출 도우미 또는 학기말 최종 분할점수 산출 도우미에서 먼저 적용해 주세요.");
+    alert("저장된 결과가 없습니다. 정기시험 추정분할점수 산출 도우미 또는 학생 성적 데이터 기반 도우미에서 먼저 적용해 주세요.");
     return;
   }
   writeComponentCutoffs(prefix, cutoffs, app.gradeMode);
@@ -658,4 +626,32 @@ export function getPerfCutoffsForApp(app) {
   if (components?.perf) return [components.perf];
   if (app.basicState?.perf) return [app.basicState.perf];
   return [];
+}
+
+export function getExam1CutoffsForApp(app) {
+  return app.components?.exam1 || app.basicState?.exam1 || null;
+}
+
+/** 학생 성적 탭 분석·정기2 초안용 — 기본 산출 분할점수를 semesterState에 동기화 */
+export function syncSemesterCutoffsFromBasic(app) {
+  const config = getConfigForApp(app);
+  const e1 = getExam1CutoffsForApp(app);
+  const pf = getPerfCutoffsForApp(app);
+
+  if (!e1 || e1.AB == null) {
+    return { ok: false, error: "기본 산출 탭에서 정기1 분할점수를 입력해 주세요." };
+  }
+
+  app.semesterState = app.semesterState || {};
+  app.semesterState.exam1Cutoffs = { ...e1 };
+
+  const pfOk =
+    Array.isArray(pf) && pf.length === config.perfCount && pf.every((p) => p && p.AB != null);
+  app.semesterState.perfCutoffs = pfOk ? pf.map((p) => ({ ...p })) : null;
+
+  const e2 = app.components?.exam2 || app.basicState?.exam2;
+  app.semesterState.exam2Cutoffs = e2 ? { ...e2 } : null;
+  app.semesterState.finalCutoffs = app.finalCutoffs ? { ...app.finalCutoffs } : null;
+
+  return { ok: true, pfOk };
 }
