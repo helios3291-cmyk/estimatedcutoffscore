@@ -438,10 +438,9 @@ function buildResultTableHead(config) {
   return `
     <tr>
       <th>경계</th>
-      <th>정기1</th><th>환산점</th>
-      <th>정기2</th><th>환산점</th>
-      ${perfCols.map((l) => `<th>${l}</th><th>환산점</th>`).join("")}
-      <th>수행합</th><th>환산점</th>
+      <th>정기1</th><th>정기1환산</th>
+      <th>정기2</th><th>정기2환산</th>
+      ${perfCols.map((l) => `<th>${l}</th><th>${l}환산</th>`).join("")}
       <th>최종</th>
     </tr>`;
 }
@@ -498,7 +497,6 @@ function calculate(app) {
       <td>${exam1[k]}</td><td class="contrib">${c.exam1}</td>
       <td>${exam2[k]}</td><td class="contrib">${c.exam2}</td>
       ${perfCells}
-      <td></td><td class="contrib"><strong>${c.perf}</strong></td>
       <td><strong>${finalCutoffs[k]}</strong></td>
     </tr>`;
     })
