@@ -522,7 +522,8 @@ function exportBasic(app) {
       app.finalCutoffs,
       ranges,
       app.componentConfig,
-      app.components
+      app.components,
+      app.gradeMode
     );
     const now = new Date();
     const fname = `추정분할점수_${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}.xlsx`;

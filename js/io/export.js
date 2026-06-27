@@ -1,5 +1,10 @@
-import { BOUNDARY_LABELS, passRateGradeColumnsForMode, boundaryForPassRateGrade } from "../core/grades.js";
-import { normalizeComponentConfig } from "../core/cutoffs.js";
+import {
+  BOUNDARY_LABELS,
+  getBoundaryKeys,
+  passRateGradeColumnsForMode,
+  boundaryForPassRateGrade,
+} from "../core/grades.js";
+import { normalizeComponentConfig, computeContributions } from "../core/cutoffs.js";
 
 export function exportToExcel(wbName, sheets) {
   if (typeof XLSX === "undefined") {
@@ -14,9 +19,10 @@ export function exportToExcel(wbName, sheets) {
   XLSX.writeFile(wb, wbName);
 }
 
-export function buildBasicExcelRows(finalCutoffs, gradeRanges, config, components) {
+export function buildBasicExcelRows(finalCutoffs, gradeRanges, config, components, mode) {
   const c = normalizeComponentConfig(config);
   const perfAreas = components.perfAreas || (components.perf ? [components.perf] : []);
+  const keys = getBoundaryKeys(mode);
 
   const rows = [
     ["추정 분할점수 — 기본 산출 결과"],
@@ -32,18 +38,30 @@ export function buildBasicExcelRows(finalCutoffs, gradeRanges, config, component
   });
 
   rows.push([]);
-  const perfHeaders = c.perfAreas.map((_, i) =>
-    c.perfAreas.length > 1 ? `수행${i + 1}` : "수행"
-  );
-  rows.push(["경계", "정기시험1", "정기시험2", ...perfHeaders, "최종"]);
+  const perfHeaderPairs = c.perfAreas.flatMap((_, i) => {
+    const label = c.perfAreas.length > 1 ? `수행${i + 1}` : "수행";
+    return [label, `${label}환산`];
+  });
+  rows.push(["경계", "정기1", "정기1환산", "정기2", "정기2환산", ...perfHeaderPairs, "최종"]);
 
-  for (const key of Object.keys(BOUNDARY_LABELS)) {
+  for (const key of keys) {
     if (finalCutoffs[key] === undefined) continue;
+    const cont = computeContributions(
+      components.exam1,
+      components.exam2,
+      perfAreas,
+      c,
+      mode,
+      key
+    );
+    const perfCells = cont.perfByArea.flatMap((contrib, i) => [perfAreas[i][key], contrib]);
     rows.push([
       BOUNDARY_LABELS[key],
       components.exam1[key],
+      cont.exam1,
       components.exam2[key],
-      ...perfAreas.map((p) => p[key]),
+      cont.exam2,
+      ...perfCells,
       finalCutoffs[key],
     ]);
   }

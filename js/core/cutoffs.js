@@ -182,10 +182,21 @@ export function solveExam2Cutoffs(finalTarget, exam1, perfCutoffs, config, mode)
   const monoIssues = validateCutoffs(result, mode, c2.max);
 
   if (monoIssues.length) {
-    issues.push(
-      "정기2 분할점수는 5점 단위로 설정됩니다. 목표 비율을 조정해 A/B·B/C 등 경계 간격이 5점 이상 벌어지도록 해 주세요."
-    );
-    issues.push(...monoIssues);
+    const vals = keys.map((k) => rawValues[k]).filter(Number.isFinite);
+    if (vals.length >= 2) {
+      const spread = Math.max(...vals) - Math.min(...vals);
+      if (spread < 5) {
+        issues.push(
+          "역산된 정기2 경계 간격이 5점 미만입니다. 학생 점수 분산이 작거나 목표 비율이 정기1+수행 환산과 비슷하면 5점 단위 분할점수를 만들기 어렵습니다."
+        );
+      } else {
+        issues.push(
+          "정기2 분할점수는 5점 단위로 설정됩니다. 목표 비율을 조정해 A/B·B/C 등 경계 간격이 5점 이상 벌어지도록 해 주세요."
+        );
+      }
+    } else {
+      issues.push("정기2 분할점수는 5점 단위로 설정됩니다. 목표 비율을 조정해 주세요.");
+    }
     return { cutoffs: null, issues, rawValues };
   }
 

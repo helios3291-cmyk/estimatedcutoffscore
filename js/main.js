@@ -1,4 +1,5 @@
 import { GRADE_MODE_FIVE, GRADE_MODE_SIX } from "./core/grades.js";
+import { getAppReadiness, readinessBarHtml } from "./core/readiness.js";
 import { saveAppState, loadAppState } from "./io/export.js";
 import { defaultComponentConfig, migrateWeightsToConfig, normalizeComponentConfig } from "./core/cutoffs.js";
 import { initBasic } from "./features/basic.js";
@@ -32,6 +33,14 @@ app.registerStateChange = (fn) => {
 app.notifyStateChange = () => {
   app.stateChangeCallbacks.forEach((fn) => fn());
 };
+
+function updateReadinessBar() {
+  const el = document.getElementById("app-readiness");
+  if (!el) return;
+  el.innerHTML = readinessBarHtml(getAppReadiness(app));
+}
+
+app.registerStateChange(updateReadinessBar);
 
 function persist() {
   const state = {
@@ -82,6 +91,7 @@ function restore() {
 
   app.refreshBasicUI?.();
   app.gradeModeCallbacks.forEach((fn) => fn());
+  updateReadinessBar();
 }
 
 function switchTab(tabId) {
@@ -97,6 +107,7 @@ function switchTab(tabId) {
 function onGradeModeChange(mode) {
   app.gradeMode = mode;
   app.gradeModeCallbacks.forEach((fn) => fn());
+  updateReadinessBar();
   persist();
 }
 
@@ -110,6 +121,8 @@ initBasic(app);
 initExamHelper(app);
 initExam2Tuner(app);
 initStudentPredict(app);
+
+updateReadinessBar();
 
 restore();
 

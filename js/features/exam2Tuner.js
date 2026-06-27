@@ -44,6 +44,34 @@ function ratioTableHtml(ratios, counts, total) {
     </table>`;
 }
 
+function sampleSummaryHtml({ exam1Total, matchedCount, showMatched }) {
+  const parts = [`정기1 분석 ${exam1Total}명`];
+  if (showMatched) {
+    parts.push(`정기1+수행 매칭 ${matchedCount}명`);
+  }
+  return `<p class="sample-summary">${parts.join(" · ")}</p>`;
+}
+
+function partialCutoffsTableHtml(partialCutoffs, partialMax, mode) {
+  const keys = getBoundaryKeys(mode);
+  return `
+    <h2 class="sub-heading">판정 경계 (정기1+수행 환산)</h2>
+    <p class="notice">정기1·수행 분할점수의 환산점 합으로 설정한 경계입니다 (정기2 미반영, 만점 ${partialMax}%).</p>
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead><tr><th>경계</th><th>환산점 합</th></tr></thead>
+        <tbody>
+          ${keys
+            .map(
+              (k) =>
+                `<tr><td>${BOUNDARY_LABELS[k]}</td><td><strong>${partialCutoffs[k]}</strong></td></tr>`
+            )
+            .join("")}
+        </tbody>
+      </table>
+    </div>`;
+}
+
 function renderPerfInputSections(app) {
   const config = getConfig(app);
   const container = document.getElementById("sf-perf-inputs");
@@ -94,6 +122,8 @@ export function initExam2Tuner(app) {
     </section>
 
     <section id="sf-ratio-result" class="card" hidden>
+      <div id="sf-sample-summary"></div>
+
       <h2>정기시험1만 반영한 성취도별 학생 비율</h2>
       <p class="notice">정기1 원점수와 정기1 분할점수를 직접 비교합니다 (반영비율·환산 미적용).</p>
       <div id="sf-ratio-exam1"></div>
@@ -101,6 +131,7 @@ export function initExam2Tuner(app) {
       <h2 class="sub-heading">정기시험1과 수행평가를 반영한 성취도별 학생 비율</h2>
       <p class="notice" id="sf-ratio-combined-desc">정기2 미반영. 정기1·수행 분할점수의 환산점 합으로 A/B, B/C, … 경계를 설정하고, 학생별 정기1·수행 환산점 합과 비교합니다 (만점 = 정기1+수행 반영비율 합).</p>
       <div id="sf-ratio-combined"></div>
+      <div id="sf-partial-cutoffs-wrap"></div>
       <p id="sf-ratio-combined-skip" class="notice" hidden></p>
     </section>
 
@@ -235,6 +266,8 @@ export function initExam2Tuner(app) {
     const combinedEl = document.getElementById("sf-ratio-combined");
     const combinedSkipEl = document.getElementById("sf-ratio-combined-skip");
     const combinedDescEl = document.getElementById("sf-ratio-combined-desc");
+    const sampleEl = document.getElementById("sf-sample-summary");
+    const partialWrapEl = document.getElementById("sf-partial-cutoffs-wrap");
 
     const sync = syncSemesterCutoffsFromBasic(app);
     if (!sync.ok) {
@@ -265,6 +298,13 @@ export function initExam2Tuner(app) {
       d1.total
     );
 
+    sampleEl.innerHTML = sampleSummaryHtml({
+      exam1Total: d1.total,
+      matchedCount: 0,
+      showMatched: false,
+    });
+    partialWrapEl.innerHTML = "";
+
     errEl.hidden = true;
     resultEl.hidden = false;
 
@@ -278,8 +318,14 @@ export function initExam2Tuner(app) {
       if (aligned.issues.length) {
         combinedEl.innerHTML = "";
         combinedEl.hidden = true;
+        partialWrapEl.innerHTML = "";
         combinedSkipEl.textContent = aligned.issues[0];
         combinedSkipEl.hidden = false;
+        sampleEl.innerHTML = sampleSummaryHtml({
+          exam1Total: d1.total,
+          matchedCount: aligned.matchedCount,
+          showMatched: true,
+        });
         app.semesterState.lastRatios = { exam1: d1, combined: null };
       } else {
         const d2 = computePartialContributionDistribution(
@@ -294,12 +340,23 @@ export function initExam2Tuner(app) {
         combinedEl.innerHTML = ratioTableHtml(d2.ratios, d2.counts, d2.total);
         combinedEl.hidden = false;
         combinedSkipEl.hidden = true;
-        app.semesterState.lastRatios = { exam1: d1, combined: d2, matchedCount: aligned.matchedCount };
+        partialWrapEl.innerHTML = partialCutoffsTableHtml(
+          d2.partialCutoffs,
+          d2.partialMax,
+          app.gradeMode
+        );
+        sampleEl.innerHTML = sampleSummaryHtml({
+          exam1Total: d1.total,
+          matchedCount: d2.total,
+          showMatched: true,
+        });
+        app.semesterState.lastRatios = { exam1: d1, combined: d2, matchedCount: d2.total };
         fillTargetRatiosFromCombined(d2.ratios, app);
       }
     } else {
       combinedEl.innerHTML = "";
       combinedEl.hidden = true;
+      partialWrapEl.innerHTML = "";
       combinedSkipEl.textContent = pfOk
         ? "수행평가 유효 학생 데이터가 없어 계산하지 않습니다."
         : "수행평가 분할점수·학생 데이터가 없어 계산하지 않습니다.";
@@ -308,6 +365,7 @@ export function initExam2Tuner(app) {
     }
 
     app.persist?.();
+    app.notifyStateChange?.();
   }
 
   function calcExam2Targets() {
@@ -406,9 +464,13 @@ export function initExam2Tuner(app) {
     }
 
     app.persist?.();
+    app.notifyStateChange?.();
   }
 
-  document.getElementById("sf-parse-data").addEventListener("click", () => parseDataInputs());
+  document.getElementById("sf-parse-data").addEventListener("click", () => {
+    parseDataInputs();
+    app.notifyStateChange?.();
+  });
   document.getElementById("sf-calc-ratios").addEventListener("click", calcRatios);
   document.getElementById("sf-calc-exam2").addEventListener("click", calcExam2Targets);
 

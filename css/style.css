@@ -49,7 +49,44 @@ header h1 {
 
 .grade-mode-label {
   font-weight: 600;
+  color: #2d3748;
   font-size: 0.9rem;
+}
+
+.readiness-bar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5rem 0.75rem;
+  margin-bottom: 1rem;
+  padding: 0.5rem 0.75rem;
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+}
+
+.readiness-chip {
+  font-size: 0.8rem;
+  padding: 0.25rem 0.65rem;
+  border-radius: 999px;
+  border: 1px solid #e2e8f0;
+  color: #718096;
+  background: #f7fafc;
+}
+
+.readiness-chip.ok {
+  border-color: #9ae6b4;
+  background: #f0fff4;
+  color: #276749;
+}
+
+.sample-summary {
+  margin-bottom: 1rem;
+  padding: 0.5rem 0.75rem;
+  background: #ebf8ff;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  color: #2c5282;
 }
 
 .radio-label {
