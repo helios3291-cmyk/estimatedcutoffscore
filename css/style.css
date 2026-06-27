@@ -512,6 +512,16 @@ header h1 {
   border-color: #fc8181;
 }
 
+.rate-input-tier-warn {
+  border-color: #ed8936;
+  box-shadow: 0 0 0 1px rgba(237, 137, 54, 0.35);
+}
+
+.rate-input-grade-warn {
+  border-color: #ecc94b;
+  box-shadow: 0 0 0 1px rgba(236, 201, 75, 0.35);
+}
+
 .pass-rate-table tfoot td {
   background: #f7fafc;
   font-weight: 600;
@@ -532,6 +542,54 @@ header h1 {
 .tier-label-high { border-left: 3px solid #e53e3e; }
 .tier-label-mid { border-left: 3px solid #d69e2e; }
 .tier-label-low { border-left: 3px solid #38a169; }
+
+.paste-area {
+  width: 100%;
+  margin-top: 0.5rem;
+  padding: 0.6rem;
+  border: 1px solid #cbd5e0;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 0.85rem;
+  resize: vertical;
+}
+
+.file-input {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.error-line + .error-line {
+  margin-top: 0.35rem;
+}
+
+.perf-count-inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+  align-items: center;
+}
+
+.perf-count-row td {
+  vertical-align: middle;
+}
+
+.radio-inline {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.perf-input-block {
+  margin-bottom: 1rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.perf-input-block:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+}
 
 @media (max-width: 768px) {
   .weights-grid,

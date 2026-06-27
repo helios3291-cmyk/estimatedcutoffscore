@@ -6,8 +6,10 @@ import {
   TIER_ORDER,
   TIER_KEYS,
   gradeColumnsForMode,
-  boundaryForGradeColumn,
+  passRateGradeColumnsForMode,
+  passRateTargetScore,
   snapRatePercent,
+  round2,
 } from "../core/grades.js";
 import {
   aggregatePointsByDifficulty,
@@ -19,7 +21,11 @@ import {
   matrixToPassRates,
   buildTierRowsBasic,
   buildTierRowsFromQuestions,
-  expectedScoresByGrade,
+  enforceTierMonotonicMatrix,
+  enforcePassRateMatrix,
+  validateTierMonotonicMatrix,
+  validateGradeMonotonicMatrix,
+  computeExamCutoffsFromPassMatrix,
 } from "../core/passRates.js";
 import {
   downloadJson,
@@ -135,7 +141,7 @@ export function initExamHelper(app) {
         matrix.E[tier] = snapRatePercent((extra.E_fail[tier] || 0) * 100);
       }
     }
-    return matrix;
+    return enforceTierMonotonicMatrix(matrix, app.gradeMode);
   }
 
   function getTierRows() {
@@ -146,11 +152,16 @@ export function initExamHelper(app) {
   }
 
   function defaultQuestions() {
-    return Array.from({ length: 5 }, (_, i) => ({
+    const tierPlan = [
+      ...Array(7).fill("상"),
+      ...Array(7).fill("중"),
+      ...Array(6).fill("하"),
+    ];
+    return tierPlan.map((tier, i) => ({
       num: i + 1,
-      point: 20,
-      tier: TIER_ORDER[i % 3],
-      type: i % 2 === 0 ? "선택형" : "서답형",
+      point: 5,
+      tier,
+      type: "선택형",
     }));
   }
 
@@ -274,7 +285,7 @@ export function initExamHelper(app) {
   }
 
   function renderPassRateTable(passRates, points, cutoffs) {
-    const gradeCols = gradeColumnsForMode(app.gradeMode);
+    const gradeCols = passRateGradeColumnsForMode(app.gradeMode);
     let matrix = passRatesToMatrix(passRates, app.gradeMode);
     matrix = enrichMatrixForFiveMode(matrix, cutoffs, points);
 
@@ -290,24 +301,10 @@ export function initExamHelper(app) {
       .map((g) => `<th class="grade-col">${g}</th>`)
       .join("");
 
-    const typeRowspan = new Map();
-    if (app.helperState.inputMode === "detail") {
-      for (const row of tierRows) {
-        typeRowspan.set(row.type, (typeRowspan.get(row.type) || 0) + 1);
-      }
-    }
-
-    const renderedTypes = new Set();
-    const isBasic = app.helperState.inputMode === "basic";
     document.getElementById("pass-rate-body").innerHTML = tierRows
       .map((row, idx) => {
-        let typeCell = "";
-        if (isBasic) {
-          typeCell = idx === 0 ? `<td rowspan="${tierRows.length}">${row.type}</td>` : "";
-        } else if (!renderedTypes.has(row.type)) {
-          typeCell = `<td rowspan="${typeRowspan.get(row.type)}">${row.type}</td>`;
-          renderedTypes.add(row.type);
-        }
+        const typeCell =
+          idx === 0 ? `<td rowspan="${tierRows.length}">${row.type}</td>` : "";
 
         const rateCells = gradeCols
           .map((grade) => {
@@ -343,7 +340,7 @@ export function initExamHelper(app) {
 
   function updateRateWarnings(matrix, gradeCols) {
     document.querySelectorAll(".rate-cell-input").forEach((input) => {
-      input.classList.remove("rate-input-warn");
+      input.classList.remove("rate-input-warn", "rate-input-tier-warn", "rate-input-grade-warn");
     });
 
     for (const tier of TIER_ORDER) {
@@ -360,6 +357,20 @@ export function initExamHelper(app) {
         }
       }
     }
+
+    for (const issue of validateGradeMonotonicMatrix(matrix, app.gradeMode)) {
+      const input = document.querySelector(
+        `.rate-cell-input[data-tier="${issue.tier}"][data-grade="${issue.grade}"]`
+      );
+      input?.classList.add("rate-input-grade-warn");
+    }
+
+    for (const issue of validateTierMonotonicMatrix(matrix, app.gradeMode)) {
+      const input = document.querySelector(
+        `.rate-cell-input[data-tier="${issue.tier}"][data-grade="${issue.grade}"]`
+      );
+      input?.classList.add("rate-input-tier-warn");
+    }
   }
 
   function onRateCellChange(input, tierRows, cutoffs) {
@@ -373,27 +384,35 @@ export function initExamHelper(app) {
     }
     app.helperState.passRateMatrix[grade][tier] = val;
 
+    app.helperState.passRateMatrix = enforcePassRateMatrix(
+      app.helperState.passRateMatrix,
+      app.gradeMode
+    );
+
+    const gradeCols = passRateGradeColumnsForMode(app.gradeMode);
+    for (const g of gradeCols) {
+      const cellInput = document.querySelector(
+        `.rate-cell-input[data-tier="${tier}"][data-grade="${g}"]`
+      );
+      if (cellInput) cellInput.value = app.helperState.passRateMatrix[g]?.[tier] ?? 0;
+    }
+
     app.helperState.passRates = matrixToPassRates(
       app.helperState.passRateMatrix,
       app.gradeMode
     );
-    const gradeCols = gradeColumnsForMode(app.gradeMode);
     renderPassRateFooter(tierRows, app.helperState.passRateMatrix, cutoffs);
     updateRateWarnings(app.helperState.passRateMatrix, gradeCols);
     persistHelper(app);
   }
 
   function renderPassRateFooter(tierRows, matrix, cutoffs) {
-    const gradeCols = gradeColumnsForMode(app.gradeMode);
+    const gradeCols = passRateGradeColumnsForMode(app.gradeMode);
     const expected = expectedScoresByGrade(tierRows, matrix, app.gradeMode);
 
     const targetCells = gradeCols
       .map((grade) => {
-        const boundary = boundaryForGradeColumn(grade, app.gradeMode);
-        let target = boundary ? cutoffs[boundary] : null;
-        if (grade === "E" && app.gradeMode === "five" && target == null) {
-          target = cutoffs.DE != null ? Math.round(cutoffs.DE * 0.85) : null;
-        }
+        const target = passRateTargetScore(grade, cutoffs, app.gradeMode);
         return `<td>${target != null ? target : "-"}</td>`;
       })
       .join("");
@@ -401,14 +420,10 @@ export function initExamHelper(app) {
     const expectedCells = gradeCols
       .map((grade) => {
         const score = expected[grade];
-        const boundary = boundaryForGradeColumn(grade, app.gradeMode);
-        let target = boundary ? cutoffs[boundary] : null;
-        if (grade === "E" && app.gradeMode === "five" && target == null) {
-          target = cutoffs.DE != null ? Math.round(cutoffs.DE * 0.85) : null;
-        }
+        const target = passRateTargetScore(grade, cutoffs, app.gradeMode);
         const match =
           target != null && Math.abs(score - target) < 0.05 ? "match" : "mismatch";
-        return `<td class="expected-${match}">${score}</td>`;
+        return `<td class="expected-${match}">${score.toFixed(2)}</td>`;
       })
       .join("");
 
@@ -538,9 +553,21 @@ export function initExamHelper(app) {
 
   document.getElementById("apply-helper-basic").addEventListener("click", () => {
     const exam = document.getElementById("helper-exam").value;
-    pushExamCutoffToSession(exam, app.helperState.cutoffs);
-    applyExamCutoffsToBasic(exam, app.helperState.cutoffs, app);
-    alert(`${EXAM_LABELS[exam]} 분할점수가 기본 산출 탭에 적용되었습니다.`);
+    const tierRows = app.helperState.tierRows?.length
+      ? app.helperState.tierRows
+      : getTierRows();
+    const computed = computeExamCutoffsFromPassMatrix(
+      tierRows,
+      app.helperState.passRateMatrix,
+      app.gradeMode
+    );
+    if (!Object.keys(computed).length) {
+      alert("먼저 통과율 제안 계산을 실행해 주세요.");
+      return;
+    }
+    pushExamCutoffToSession(exam, computed);
+    applyExamCutoffsToBasic(exam, computed, app);
+    alert(`${EXAM_LABELS[exam]} 추정 분할점수(소수 둘째 자리)가 기본 산출 탭에 적용되었습니다.`);
     app.switchTab?.("basic");
   });
 

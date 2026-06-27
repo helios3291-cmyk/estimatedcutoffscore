@@ -1,11 +1,39 @@
 import { predictStudentGrade } from "../core/student.js";
 import { BOUNDARY_LABELS, getBoundaryKeys } from "../core/grades.js";
 import { getConfigForApp } from "./basic.js";
+import { perfWeightSum } from "../core/cutoffs.js";
+
+function renderPerfScoreInputs(app) {
+  const config = getConfigForApp(app);
+  const container = document.getElementById("student-perf-inputs");
+  if (!container) return;
+
+  const saved = app.studentState?.scores?.perfAreas || [];
+  container.innerHTML = config.perfAreas
+    .map((area, i) => {
+      const label = config.perfAreas.length > 1 ? `수행평가 ${i + 1}` : "수행평가";
+      return `
+        <div class="field">
+          <label id="label-s-perf-${i}" for="s-perf-${i}">${label} (만점 ${area.max})</label>
+          <input type="number" id="s-perf-${i}" min="0" max="${area.max}" step="0.1" placeholder="점수" value="${saved[i] ?? ""}">
+        </div>`;
+    })
+    .join("");
+
+  bindPerfInputs(app);
+}
+
+function bindPerfInputs(app) {
+  const config = getConfigForApp(app);
+  for (let i = 0; i < config.perfAreas.length; i++) {
+    const el = document.getElementById(`s-perf-${i}`);
+    if (el) el.addEventListener("input", () => persistStudent(app));
+  }
+}
 
 function updateScoreInputLimits(config) {
   const e1 = document.getElementById("s-exam1");
   const e2 = document.getElementById("s-exam2");
-  const pf = document.getElementById("s-perf");
   if (e1) {
     e1.max = config.exam1.max;
     document.getElementById("label-s-exam1").textContent = `정기시험1 (만점 ${config.exam1.max})`;
@@ -13,10 +41,6 @@ function updateScoreInputLimits(config) {
   if (e2) {
     e2.max = config.exam2.max;
     document.getElementById("label-s-exam2").textContent = `정기시험2 (만점 ${config.exam2.max})`;
-  }
-  if (pf) {
-    pf.max = config.perf.max;
-    document.getElementById("label-s-perf").textContent = `수행평가 (만점 ${config.perf.max})`;
   }
 }
 
@@ -28,8 +52,8 @@ export function initStudentPredict(app) {
       <div class="weights-grid">
         <div class="field"><label id="label-s-exam1" for="s-exam1">정기시험1 (만점 100)</label><input type="number" id="s-exam1" min="0" max="100" step="0.1" placeholder="점수"></div>
         <div class="field"><label id="label-s-exam2" for="s-exam2">정기시험2 (만점 100)</label><input type="number" id="s-exam2" min="0" max="100" step="0.1" placeholder="점수"></div>
-        <div class="field"><label id="label-s-perf" for="s-perf">수행평가 (만점 40)</label><input type="number" id="s-perf" min="0" max="40" step="0.1" placeholder="점수"></div>
       </div>
+      <div id="student-perf-inputs" class="weights-grid"></div>
       <p id="student-weight-display" class="weight-display"></p>
       <button type="button" id="load-final-cutoffs" class="secondary-btn small-btn">기본 산출 최종 분할점수 불러오기</button>
     </section>
@@ -73,7 +97,7 @@ export function initStudentPredict(app) {
       </div>`
       )
       .join("");
-    bindInputs();
+    bindCutoffInputs();
   }
 
   function readFinalCutoffs() {
@@ -86,11 +110,20 @@ export function initStudentPredict(app) {
     return o;
   }
 
+  function readPerfScores() {
+    const config = getConfigForApp(app);
+    return config.perfAreas.map((_, i) => parseFloat(document.getElementById(`s-perf-${i}`)?.value));
+  }
+
   function updateWeightDisplay() {
     const c = getConfigForApp(app);
+    const perfParts = c.perfAreas.map((a, i) =>
+      c.perfAreas.length > 1 ? `수행${i + 1} ${a.weight}%/${a.max}점` : `수행 ${a.weight}%/${a.max}점`
+    );
     document.getElementById("student-weight-display").textContent =
-      `반영: 정기1 ${c.exam1.weight}%/${c.exam1.max}점 · 정기2 ${c.exam2.weight}%/${c.exam2.max}점 · 수행 ${c.perf.weight}%/${c.perf.max}점`;
+      `반영: 정기1 ${c.exam1.weight}%/${c.exam1.max}점 · 정기2 ${c.exam2.weight}%/${c.exam2.max}점 · ${perfParts.join(" · ")} (수행 합 ${perfWeightSum(c)}%)`;
     updateScoreInputLimits(c);
+    renderPerfScoreInputs(app);
   }
 
   function calculateStudent() {
@@ -100,7 +133,7 @@ export function initStudentPredict(app) {
     const scores = {
       exam1: parseFloat(document.getElementById("s-exam1").value),
       exam2: parseFloat(document.getElementById("s-exam2").value),
-      perf: parseFloat(document.getElementById("s-perf").value),
+      perfAreas: readPerfScores(),
     };
 
     const finalCutoffs = readFinalCutoffs();
@@ -147,11 +180,7 @@ export function initStudentPredict(app) {
     app.persist?.();
   }
 
-  function bindInputs() {
-    ["s-exam1", "s-exam2", "s-perf"].forEach((id) => {
-      const el = document.getElementById(id);
-      if (el) el.addEventListener("input", () => persistStudent(app));
-    });
+  function bindCutoffInputs() {
     getBoundaryKeys(app.gradeMode).forEach((k) => {
       const el = document.getElementById(`sc-${k}`);
       if (el) el.addEventListener("input", () => persistStudent(app));
@@ -163,7 +192,7 @@ export function initStudentPredict(app) {
       scores: {
         exam1: parseFloat(document.getElementById("s-exam1").value) || null,
         exam2: parseFloat(document.getElementById("s-exam2").value) || null,
-        perf: parseFloat(document.getElementById("s-perf").value) || null,
+        perfAreas: readPerfScores().map((v) => (Number.isFinite(v) ? v : null)),
       },
       finalCutoffs: readFinalCutoffs(),
     };
@@ -185,6 +214,10 @@ export function initStudentPredict(app) {
     persistStudent(app);
   });
 
+  ["s-exam1", "s-exam2"].forEach((id) => {
+    document.getElementById(id).addEventListener("input", () => persistStudent(app));
+  });
+
   app.registerGradeModeChange(() => {
     renderCutoffInputs();
     updateWeightDisplay();
@@ -204,9 +237,18 @@ export function initStudentPredict(app) {
   if (app.studentState?.scores) {
     document.getElementById("s-exam1").value = app.studentState.scores.exam1 ?? "";
     document.getElementById("s-exam2").value = app.studentState.scores.exam2 ?? "";
-    document.getElementById("s-perf").value = app.studentState.scores.perf ?? "";
   }
 
   renderCutoffInputs();
   updateWeightDisplay();
+
+  if (app.studentState?.scores?.perfAreas) {
+    app.studentState.scores.perfAreas.forEach((v, i) => {
+      const el = document.getElementById(`s-perf-${i}`);
+      if (el && v != null) el.value = v;
+    });
+  } else if (app.studentState?.scores?.perf != null) {
+    const el = document.getElementById("s-perf-0");
+    if (el) el.value = app.studentState.scores.perf;
+  }
 }

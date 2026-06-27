@@ -1,4 +1,5 @@
 export const TIER_ORDER = ["상", "중", "하"];
+export const TIER_DISPLAY_ORDER = ["하", "중", "상"];
 export const TIER_KEYS = { 상: "high", 중: "mid", 하: "low" };
 
 export const GRADE_MODE_FIVE = "five";
@@ -21,16 +22,39 @@ export function round1(n) {
   return Math.round(n * 10) / 10;
 }
 
+export const MIN_PASS_RATE_PERCENT = 10;
+
+export function round2(n) {
+  return Math.round(n * 100) / 100;
+}
+
 export function roundInt(n) {
   return Math.round(n);
 }
 
 export function snapRatePercent(n) {
-  return Math.max(0, Math.min(100, Math.round(n / 5) * 5));
+  return Math.max(MIN_PASS_RATE_PERCENT, Math.min(100, Math.round(n / 5) * 5));
 }
 
 export function snapScore5(n, max) {
   return Math.max(0, Math.min(max, Math.round(n / 5) * 5));
+}
+
+export function snapCutoffsMonotonic(rawCutoffs, mode, maxScore) {
+  const keys = getBoundaryKeys(mode);
+  const result = {};
+  let prev = maxScore + 5;
+
+  for (const key of keys) {
+    let snapped = snapScore5(rawCutoffs[key] ?? 0, maxScore);
+    if (snapped >= prev) {
+      snapped = Math.max(0, Math.floor((prev - 1) / 5) * 5);
+    }
+    result[key] = snapped;
+    prev = snapped;
+  }
+
+  return result;
 }
 
 export const TIER_LABELS_KO = { 하: "쉬움", 중: "보통", 상: "어려움" };
@@ -53,6 +77,32 @@ export const BOUNDARY_FOR_GRADE = {
 
 export function gradeColumnsForMode(mode) {
   return mode === GRADE_MODE_SIX ? ["A", "B", "C", "D", "E", "미도달"] : ["A", "B", "C", "D", "E"];
+}
+
+/** 통과율 표: 미도달 열 없음, E/미도달 경계는 E열에 표시 */
+export function passRateGradeColumnsForMode(mode) {
+  return ["A", "B", "C", "D", "E"];
+}
+
+const PASS_RATE_GRADE_TO_BOUNDARY = {
+  A: "AB",
+  B: "BC",
+  C: "CD",
+  D: "DE",
+  E: "E_fail",
+};
+
+export function boundaryForPassRateGrade(grade) {
+  return PASS_RATE_GRADE_TO_BOUNDARY[grade] ?? null;
+}
+
+export function passRateTargetScore(grade, cutoffs, mode) {
+  const boundary = boundaryForPassRateGrade(grade);
+  if (!boundary) return null;
+  if (grade === "E" && mode === GRADE_MODE_FIVE && cutoffs.E_fail == null) {
+    return cutoffs.DE != null ? round2(cutoffs.DE * 0.85) : null;
+  }
+  return cutoffs[boundary] != null ? round2(cutoffs[boundary]) : null;
 }
 
 export function boundaryForGradeColumn(grade, mode) {

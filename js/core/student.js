@@ -1,28 +1,52 @@
-import { computeWeightedScore } from "./cutoffs.js";
-import { predictGrade, distanceToBoundaries, round1, roundInt } from "./grades.js";
+import {
+  computeWeightedScore,
+  normalizeComponentConfig,
+  studentPerfContribution,
+} from "./cutoffs.js";
+import { predictGrade, distanceToBoundaries, round1 } from "./grades.js";
 
 export function predictStudentGrade(scores, config, finalCutoffs, mode) {
-  const { exam1, exam2, perf } = scores;
+  const { exam1, exam2 } = scores;
+  const c = normalizeComponentConfig(config);
+  const perfScores = Array.isArray(scores.perfAreas)
+    ? scores.perfAreas
+    : scores.perf != null
+      ? [scores.perf]
+      : [];
 
-  if (![exam1, exam2, perf].every((v) => Number.isFinite(v))) {
-    return { error: "학생 점수를 모두 입력해 주세요." };
+  if (!Number.isFinite(exam1) || !Number.isFinite(exam2)) {
+    return { error: "정기시험 점수를 모두 입력해 주세요." };
+  }
+
+  if (perfScores.length !== c.perfAreas.length) {
+    return { error: `수행평가 ${c.perfAreas.length}개 영역 점수를 모두 입력해 주세요.` };
+  }
+
+  for (let i = 0; i < c.perfAreas.length; i++) {
+    if (!Number.isFinite(perfScores[i])) {
+      return { error: `수행평가 ${c.perfAreas.length > 1 ? i + 1 : ""} 점수를 입력해 주세요.`.trim() };
+    }
   }
 
   if (!finalCutoffs || !Number.isFinite(finalCutoffs.AB)) {
     return { error: "최종 분할점수가 설정되지 않았습니다. 기본 산출 탭에서 먼저 계산해 주세요." };
   }
 
-  if (exam1 > config.exam1.max) {
-    return { error: `정기시험1 점수는 만점(${config.exam1.max})을 초과할 수 없습니다.` };
+  if (exam1 > c.exam1.max) {
+    return { error: `정기시험1 점수는 만점(${c.exam1.max})을 초과할 수 없습니다.` };
   }
-  if (exam2 > config.exam2.max) {
-    return { error: `정기시험2 점수는 만점(${config.exam2.max})을 초과할 수 없습니다.` };
-  }
-  if (perf > config.perf.max) {
-    return { error: `수행평가 점수는 만점(${config.perf.max})을 초과할 수 없습니다.` };
+  if (exam2 > c.exam2.max) {
+    return { error: `정기시험2 점수는 만점(${c.exam2.max})을 초과할 수 없습니다.` };
   }
 
-  const finalScore = computeWeightedScore(exam1, exam2, perf, config);
+  for (let i = 0; i < c.perfAreas.length; i++) {
+    const label = c.perfAreas.length > 1 ? `수행평가 ${i + 1}` : "수행평가";
+    if (perfScores[i] > c.perfAreas[i].max) {
+      return { error: `${label} 점수는 만점(${c.perfAreas[i].max})을 초과할 수 없습니다.` };
+    }
+  }
+
+  const finalScore = computeWeightedScore(exam1, exam2, perfScores, c);
   const prediction = predictGrade(finalScore, finalCutoffs, mode);
   const distances = distanceToBoundaries(finalScore, finalCutoffs, mode);
 
@@ -32,6 +56,7 @@ export function predictStudentGrade(scores, config, finalCutoffs, mode) {
   return {
     finalScore,
     grade: prediction.grade,
+    perfContribution: studentPerfContribution(perfScores, c),
     distances,
     marginAbove: upper ? round1(upper.diff) : null,
     marginBelow: lower ? round1(Math.abs(lower.diff)) : null,

@@ -1,164 +1,418 @@
 import {
   getBoundaryKeys,
   BOUNDARY_LABELS,
-  parseScore,
-  validateCutoffs,
 } from "../core/grades.js";
 import {
-  combineCutoffs,
-  solveExam2Cutoffs,
-} from "../core/cutoffs.js";
+  computeGradeDistribution,
+  computePartialContributionDistribution,
+  parseTargetRatios,
+  solveExam2ForTargetRatios,
+  gradeListForMode,
+  partialWeightMax,
+} from "../core/gradeDistribution.js";
+import {
+  parsePasteText,
+  parseWorkbookSheet,
+  validStudentTotals,
+  summarizeStudentData,
+  alignStudentsById,
+} from "../core/studentData.js";
+import { applyExamCutoffsToBasic, getConfigForApp, getPerfCutoffsForApp } from "./basic.js";
 import { pushExamCutoffToSession } from "../io/export.js";
-import { applyExamCutoffsToBasic, getConfigForApp } from "./basic.js";
 
 function getConfig(app) {
   return getConfigForApp(app);
+}
+
+function getBasicCutoffs(app, component) {
+  if (component === "perfAreas") {
+    return getPerfCutoffsForApp(app);
+  }
+  return app.components?.[component] || app.basicState?.[component] || null;
+}
+
+function ratioTableHtml(ratios, counts, total) {
+  const grades = Object.keys(ratios);
+  return `
+    <table class="data-table">
+      <thead><tr><th>성취도</th><th>학생 수</th><th>비율(%)</th></tr></thead>
+      <tbody>
+        ${grades
+          .map(
+            (g) =>
+              `<tr><td>${g}</td><td>${counts[g] ?? 0}</td><td>${ratios[g] ?? 0}%</td></tr>`
+          )
+          .join("")}
+        <tr class="footer-target"><td><strong>합계</strong></td><td><strong>${total}</strong></td><td>100%</td></tr>
+      </tbody>
+    </table>`;
+}
+
+function renderPerfInputSections(app) {
+  const config = getConfig(app);
+  const container = document.getElementById("sf-perf-inputs");
+  if (!container) return;
+
+  const count = config.perfCount || 1;
+  const pastes = app.semesterState?.perfPastes || [];
+
+  container.innerHTML = Array.from({ length: count }, (_, i) => {
+    const label = count > 1 ? `수행평가 ${i + 1}` : "수행평가";
+    return `
+      <div class="perf-input-block">
+        <h3 class="sub-heading">${label}</h3>
+        <input type="file" id="sf-perf-file-${i}" accept=".xlsx,.xls,.csv" class="file-input">
+        <textarea id="sf-perf-paste-${i}" class="paste-area" rows="5" placeholder="엑셀에서 복사한 범위를 붙여 넣으세요">${pastes[i] ?? ""}</textarea>
+        <p id="sf-perf-stats-${i}" class="component-max-hint"></p>
+      </div>`;
+  }).join("");
+}
+
+function fillTargetRatiosFromCombined(ratios, app) {
+  const grades = gradeListForMode(app.gradeMode);
+  for (const g of grades) {
+    const el = document.getElementById(`sf-tr-${g}`);
+    if (el && ratios[g] != null) el.value = ratios[g];
+  }
+  app.semesterState.targetRatios = { ...ratios };
 }
 
 export function initExam2Tuner(app) {
   const root = document.getElementById("panel-exam2-tuner");
   root.innerHTML = `
     <section class="card">
-      <h2>반영 비율 · 만점</h2>
-      <p class="notice">기본 산출 탭의 설정을 사용합니다. 변경은 기본 산출 탭에서 해 주세요.</p>
-      <p id="tuner-weight-display" class="weight-display"></p>
-    </section>
-
-    <div class="components-grid two-col">
-      <section class="card">
-        <h2>정기시험1 분할점수 (확정)</h2>
-        <p id="tuner-hint-exam1" class="component-max-hint"></p>
-        <div id="tuner-exam1" class="boundaries-grid"></div>
-        <button type="button" id="tuner-load-exam1" class="secondary-btn small-btn">기본 산출에서 불러오기</button>
-      </section>
-      <section class="card">
-        <h2>수행평가 분할점수 (확정)</h2>
-        <p id="tuner-hint-perf" class="component-max-hint"></p>
-        <div id="tuner-perf" class="boundaries-grid"></div>
-        <button type="button" id="tuner-load-perf" class="secondary-btn small-btn">기본 산출에서 불러오기</button>
-      </section>
-    </div>
-
-    <section class="card">
-      <h2>목표 최종 분할점수</h2>
-      <p class="component-max-hint">만점 100점 척도 (최종)</p>
-      <div id="tuner-target" class="boundaries-grid"></div>
-      <button type="button" id="tuner-load-target" class="secondary-btn small-btn">기본 산출 최종값 불러오기</button>
+      <h2>학생 성적 데이터 입력</h2>
+      <p class="notice">엑셀 파일 업로드 또는 시트 범위 복사·붙여넣기(탭/쉼표 구분). <strong>반×번호 행렬</strong>(모서리 <code>반/번호</code>, 열=1·2·3… 또는 1반·2반…, 행=번호, 셀=학생 총점) 또는 <strong>문항별 행</strong>(첫 열=번호, 이후 열=문항 점수 합산) 형식을 지원합니다. 미인정결·질병결·자퇴 등은 해당 학생만 비율 계산에서 제외됩니다. 수행평가 영역 수는 <strong>기본 산출 탭</strong> 설정을 따릅니다.</p>
+      <div>
+        <h3 class="sub-heading">정기시험1</h3>
+        <input type="file" id="sf-exam1-file" accept=".xlsx,.xls,.csv" class="file-input">
+        <textarea id="sf-exam1-paste" class="paste-area" rows="6" placeholder="엑셀에서 복사한 범위를 붙여 넣으세요"></textarea>
+        <p id="sf-exam1-stats" class="component-max-hint"></p>
+      </div>
+      <div id="sf-perf-inputs" class="components-grid"></div>
+      <button type="button" id="sf-parse-data" class="primary-btn">데이터 반영</button>
+      <p id="sf-parse-error" class="error-msg" hidden></p>
     </section>
 
     <section class="card">
-      <button type="button" id="calc-tuner" class="primary-btn">정기시험2 분할점수 초안 계산</button>
-      <p id="tuner-error" class="error-msg" hidden></p>
+      <h2>분할점수 (기본 산출 탭)</h2>
+      <p class="notice">기본 산출 탭의 최종 분할점수·정기1·수행·정기2 분할점수를 사용합니다.</p>
+      <p id="sf-cutoff-status" class="weight-display"></p>
+      <button type="button" id="sf-load-cutoffs" class="secondary-btn small-btn">기본 산출에서 불러오기</button>
     </section>
 
-    <section id="tuner-result" class="card" hidden>
+    <section class="card">
+      <button type="button" id="sf-calc-ratios" class="primary-btn">성취도 비율 계산</button>
+      <p id="sf-ratio-error" class="error-msg" hidden></p>
+    </section>
+
+    <section id="sf-ratio-result" class="card" hidden>
+      <h2>정기시험1만 반영한 성취도별 학생 비율</h2>
+      <p class="notice">정기1 원점수와 정기1 분할점수를 직접 비교합니다 (반영비율·환산 미적용).</p>
+      <div id="sf-ratio-exam1"></div>
+
+      <h2 class="sub-heading">정기시험1과 수행평가를 반영한 성취도별 학생 비율</h2>
+      <p class="notice" id="sf-ratio-combined-desc">정기2 미반영. 정기1·수행 분할점수의 환산점 합으로 A/B, B/C, … 경계를 설정하고, 학생별 정기1·수행 환산점 합과 비교합니다 (만점 = 정기1+수행 반영비율 합).</p>
+      <div id="sf-ratio-combined"></div>
+      <p id="sf-ratio-combined-skip" class="notice" hidden></p>
+    </section>
+
+    <section class="card">
+      <h2>정기시험2 추정분할점수 초안</h2>
+      <p class="notice">정기2 분할점수가 아직 확정되지 않았다는 전제입니다. 위 <strong>정기1+수행 비율</strong>을 참고하여, 모든 학생이 정기2에서 정기1과 동일한 점수를 받는다고 가정할 때 목표 <strong>최종</strong> 성취도 비율(합 100%)에 맞는 정기2 A/B, B/C, … 분할점수 초안을 산출합니다.</p>
+      <div id="sf-target-ratios" class="boundaries-grid"></div>
+      <button type="button" id="sf-calc-exam2" class="primary-btn">초안 산출</button>
+      <p id="sf-exam2-error" class="error-msg" hidden></p>
+    </section>
+
+    <section id="sf-exam2-result" class="card" hidden>
       <div class="card-head-row">
-        <h2>초안 결과</h2>
-        <button type="button" id="apply-tuner-basic" class="primary-btn small-btn">기본 산출에 적용</button>
+        <h2>정기시험2 추정분할점수 초안</h2>
+        <button type="button" id="sf-apply-exam2" class="primary-btn small-btn">기본 산출에 적용</button>
       </div>
-      <p id="tuner-exam2-hint" class="component-max-hint"></p>
-      <h3 class="sub-heading">권장 정기시험2 분할점수</h3>
       <div class="table-wrap">
-        <table class="data-table" id="tuner-exam2-table">
-          <thead><tr><th>경계</th><th>권장값</th></tr></thead>
+        <table class="data-table" id="sf-exam2-table">
+          <thead><tr><th>경계</th><th>초안값</th></tr></thead>
           <tbody></tbody>
         </table>
       </div>
-      <h3 class="sub-heading">비교: 초안 반영 전 vs 초안 반영 후 최종</h3>
+      <h3 class="sub-heading">목표 최종 분할점수 (역산 기준)</h3>
       <div class="table-wrap">
-        <table class="data-table" id="tuner-compare-table">
-          <thead><tr><th>경계</th><th>정기1+수행만 반영</th><th>목표 최종</th><th>초안 반영 후 최종</th></tr></thead>
+        <table class="data-table" id="sf-final-table">
+          <thead><tr><th>경계</th><th>목표 최종</th></tr></thead>
           <tbody></tbody>
         </table>
       </div>
+      <div id="sf-raw-values-wrap"></div>
+      <div id="sf-achieved-wrap"></div>
     </section>
   `;
 
-  function renderBoundaryGroup(containerId, prefix, values, maxScore) {
-    const keys = getBoundaryKeys(app.gradeMode);
-    const container = document.getElementById(containerId);
-    container.innerHTML = keys
+  app.semesterState = app.semesterState || {
+    exam1Students: [],
+    perfStudentsByArea: [],
+    exam1Cutoffs: null,
+    perfCutoffs: null,
+    finalCutoffs: null,
+    exam2Cutoffs: null,
+    targetRatios: {},
+    lastResult: null,
+  };
+
+  if (app.semesterState.perfStudents?.length && !app.semesterState.perfStudentsByArea?.length) {
+    app.semesterState.perfStudentsByArea = [app.semesterState.perfStudents];
+  }
+
+  function renderTargetRatioInputs() {
+    const grades = gradeListForMode(app.gradeMode);
+    document.getElementById("sf-target-ratios").innerHTML = grades
       .map(
-        (k) => `
+        (g) => `
       <div class="field boundary-field">
-        <label for="${prefix}-${k}">${BOUNDARY_LABELS[k]}</label>
-        <input type="number" id="${prefix}-${k}" min="0" max="${maxScore}" step="0.1" value="${values?.[k] ?? ""}">
+        <label for="sf-tr-${g}">${g} (%)</label>
+        <input type="number" id="sf-tr-${g}" min="0" max="100" step="0.1"
+          value="${app.semesterState.targetRatios?.[g] ?? ""}">
       </div>`
       )
       .join("");
   }
 
-  function renderInputs() {
-    const config = getConfig(app);
-    renderBoundaryGroup("tuner-exam1", "t1", app.tunerState?.exam1, config.exam1.max);
-    renderBoundaryGroup("tuner-perf", "tp", app.tunerState?.perf, config.perf.max);
-    renderBoundaryGroup("tuner-target", "tt", app.tunerState?.target, 100);
-    document.getElementById("tuner-hint-exam1").textContent = `만점 ${config.exam1.max}점 척도`;
-    document.getElementById("tuner-hint-perf").textContent = `만점 ${config.perf.max}점 척도`;
-    document.getElementById("tuner-exam2-hint").textContent =
-      `만점 ${config.exam2.max}점 척도 · 반영 ${config.exam2.weight}%`;
-    updateWeightDisplay(app);
-  }
-
-  function readGroup(prefix) {
-    const keys = getBoundaryKeys(app.gradeMode);
-    const o = {};
-    for (const k of keys) o[k] = parseScore(document.getElementById(`${prefix}-${k}`)?.value);
-    return o;
-  }
-
-  function writeGroup(prefix, values) {
-    const keys = getBoundaryKeys(app.gradeMode);
-    for (const k of keys) {
-      const el = document.getElementById(`${prefix}-${k}`);
-      if (el && values?.[k] != null) el.value = values[k];
+  function readTargetRatios() {
+    const grades = gradeListForMode(app.gradeMode);
+    const inputs = {};
+    for (const g of grades) {
+      inputs[g] = document.getElementById(`sf-tr-${g}`)?.value;
     }
+    return parseTargetRatios(inputs, app.gradeMode);
   }
 
-  function updateWeightDisplay(app) {
-    const c = getConfig(app);
-    document.getElementById("tuner-weight-display").textContent =
-      `정기1 ${c.exam1.weight}%/${c.exam1.max}점 · 정기2 ${c.exam2.weight}%/${c.exam2.max}점 · 수행 ${c.perf.weight}%/${c.perf.max}점`;
+  function updateCutoffStatus() {
+    const e1 = app.semesterState.exam1Cutoffs;
+    const pf = app.semesterState.perfCutoffs;
+    const config = getConfig(app);
+    const el = document.getElementById("sf-cutoff-status");
+    const pfOk = Array.isArray(pf) && pf.length === config.perfCount && pf.every(Boolean);
+    const partialMax = partialWeightMax(config);
+
+    if (e1 && pfOk) {
+      el.textContent = `정기1·수행 ${config.perfCount}개 영역 분할점수 준비됨 (정기1+수행 만점 ${partialMax}%).`;
+      return;
+    }
+    if (e1) {
+      el.textContent = "정기1 분할점수만 준비됨. (정기1만 반영한 비율 계산 가능)";
+      return;
+    }
+    el.textContent = "기본 산출 탭에서 분할점수를 불러와 주세요.";
   }
 
-  function calculateTuner() {
-    const errEl = document.getElementById("tuner-error");
-    const resultEl = document.getElementById("tuner-result");
+  function loadCutoffsFromBasic() {
+    const e1 = getBasicCutoffs(app, "exam1");
+    const pf = getBasicCutoffs(app, "perfAreas");
+    const e2 = getBasicCutoffs(app, "exam2");
     const config = getConfig(app);
 
-    const exam1 = readGroup("t1");
-    const perf = readGroup("tp");
-    const target = readGroup("tt");
-    const emptyExam2 = {};
-    getBoundaryKeys(app.gradeMode).forEach((k) => (emptyExam2[k] = 0));
+    if (!e1) {
+      alert("기본 산출 탭에 정기1 분할점수를 먼저 입력해 주세요.");
+      return;
+    }
+    app.semesterState.exam1Cutoffs = { ...e1 };
+    app.semesterState.perfCutoffs =
+      pf.length === config.perfCount ? pf.map((p) => ({ ...p })) : null;
+    app.semesterState.exam2Cutoffs = e2 ? { ...e2 } : null;
+    app.semesterState.finalCutoffs = app.finalCutoffs ? { ...app.finalCutoffs } : null;
+    updateCutoffStatus();
+    renderPerfInputSections(app);
+    app.persist?.();
+  }
 
-    const inputIssues = [
-      ...validateCutoffs(exam1, app.gradeMode, config.exam1.max).map((m) => `정기1: ${m}`),
-      ...validateCutoffs(perf, app.gradeMode, config.perf.max).map((m) => `수행: ${m}`),
-      ...validateCutoffs(target, app.gradeMode, 100).map((m) => `목표: ${m}`),
-    ];
+  async function handleFile(file) {
+    if (!file) return null;
+    const data = await file.arrayBuffer();
+    const wb = XLSX.read(data, { type: "array" });
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    return parseWorkbookSheet(sheet);
+  }
 
-    if (config.exam2.weight === 0) {
-      inputIssues.push("정기2 반영 비율이 0%입니다.");
+  async function parseDataInputs() {
+    const errEl = document.getElementById("sf-parse-error");
+    errEl.hidden = true;
+
+    const config = getConfig(app);
+    const count = config.perfCount || 1;
+
+    let exam1Parsed = parsePasteText(document.getElementById("sf-exam1-paste").value);
+    const perfParsedList = [];
+
+    for (let i = 0; i < count; i++) {
+      let parsed = parsePasteText(document.getElementById(`sf-perf-paste-${i}`)?.value || "");
+      const f = document.getElementById(`sf-perf-file-${i}`)?.files[0];
+      if (f) parsed = await handleFile(f);
+      perfParsedList.push(parsed);
     }
 
-    if (inputIssues.length) {
-      errEl.textContent = inputIssues[0];
+    const f1 = document.getElementById("sf-exam1-file").files[0];
+    if (f1) exam1Parsed = await handleFile(f1);
+
+    const issues = [...(exam1Parsed.issues || [])];
+    perfParsedList.forEach((p, i) => {
+      if (p.issues?.length) issues.push(`수행${count > 1 ? i + 1 : ""}: ${p.issues[0]}`);
+    });
+
+    if (issues.length) {
+      errEl.textContent = issues[0];
+      errEl.hidden = false;
+    }
+
+    app.semesterState.exam1Students = exam1Parsed.students;
+    app.semesterState.perfStudentsByArea = perfParsedList.map((p) => p.students);
+
+    const s1 = summarizeStudentData(exam1Parsed.students);
+    document.getElementById("sf-exam1-stats").textContent = s1
+      ? `유효 ${s1.count}명 (제외 ${s1.excluded}명) · 평균 ${s1.mean} · 표준편차 ${s1.std}`
+      : "유효 데이터 없음";
+
+    for (let i = 0; i < count; i++) {
+      const s2 = summarizeStudentData(perfParsedList[i].students);
+      const label = count > 1 ? `수행${i + 1}` : "수행";
+      document.getElementById(`sf-perf-stats-${i}`).textContent = s2
+        ? `${label} · 유효 ${s2.count}명 (제외 ${s2.excluded}명) · 평균 ${s2.mean} · 표준편차 ${s2.std}`
+        : `${label} · 유효 데이터 없음`;
+    }
+
+    app.semesterState.exam1Paste = document.getElementById("sf-exam1-paste").value;
+    app.semesterState.perfPastes = Array.from({ length: count }, (_, i) =>
+      document.getElementById(`sf-perf-paste-${i}`)?.value || ""
+    );
+
+    app.persist?.();
+  }
+
+  function getAlignedScores() {
+    const config = getConfig(app);
+    const perfLists = app.semesterState.perfStudentsByArea || [];
+    while (perfLists.length < config.perfCount) perfLists.push([]);
+
+    return alignStudentsById(app.semesterState.exam1Students, perfLists.slice(0, config.perfCount));
+  }
+
+  function calcRatios() {
+    const errEl = document.getElementById("sf-ratio-error");
+    const resultEl = document.getElementById("sf-ratio-result");
+    const combinedEl = document.getElementById("sf-ratio-combined");
+    const combinedSkipEl = document.getElementById("sf-ratio-combined-skip");
+    const combinedDescEl = document.getElementById("sf-ratio-combined-desc");
+    const e1 = app.semesterState.exam1Cutoffs;
+    const pf = app.semesterState.perfCutoffs;
+    const config = getConfig(app);
+    const partialMax = partialWeightMax(config);
+
+    if (!e1) {
+      errEl.textContent = "먼저 기본 산출에서 분할점수를 불러오세요.";
       errEl.hidden = false;
       resultEl.hidden = true;
       return;
     }
 
-    const { cutoffs: exam2Suggested, issues } = solveExam2Cutoffs(
-      target,
-      exam1,
-      perf,
+    const exam1Scores = validStudentTotals(app.semesterState.exam1Students);
+
+    if (!exam1Scores.length) {
+      errEl.textContent = "정기시험1 유효 학생 데이터가 없습니다.";
+      errEl.hidden = false;
+      resultEl.hidden = true;
+      return;
+    }
+
+    const d1 = computeGradeDistribution(exam1Scores, e1, app.gradeMode);
+    document.getElementById("sf-ratio-exam1").innerHTML = ratioTableHtml(
+      d1.ratios,
+      d1.counts,
+      d1.total
+    );
+
+    errEl.hidden = true;
+    resultEl.hidden = false;
+
+    const pfOk = Array.isArray(pf) && pf.length === config.perfCount && pf.every(Boolean);
+    const hasPerfData = (app.semesterState.perfStudentsByArea || []).some(
+      (list) => validStudentTotals(list).length > 0
+    );
+
+    if (pfOk && hasPerfData) {
+      const aligned = getAlignedScores();
+      if (aligned.issues.length) {
+        combinedEl.innerHTML = "";
+        combinedEl.hidden = true;
+        combinedSkipEl.textContent = aligned.issues[0];
+        combinedSkipEl.hidden = false;
+        app.semesterState.lastRatios = { exam1: d1, combined: null };
+      } else {
+        const d2 = computePartialContributionDistribution(
+          aligned.exam1Scores,
+          aligned.perfScoresByArea,
+          e1,
+          pf,
+          config,
+          app.gradeMode
+        );
+        combinedDescEl.textContent = `정기2 미반영. 정기1·수행 분할점수의 환산점 합으로 A/B, B/C, … 경계를 설정하고, 학생별 정기1·수행 환산점 합과 비교합니다 (만점 ${partialMax}%).`;
+        combinedEl.innerHTML = ratioTableHtml(d2.ratios, d2.counts, d2.total);
+        combinedEl.hidden = false;
+        combinedSkipEl.hidden = true;
+        app.semesterState.lastRatios = { exam1: d1, combined: d2, matchedCount: aligned.matchedCount };
+        fillTargetRatiosFromCombined(d2.ratios, app);
+      }
+    } else {
+      combinedEl.innerHTML = "";
+      combinedEl.hidden = true;
+      combinedSkipEl.textContent = pfOk
+        ? "수행평가 유효 학생 데이터가 없어 계산하지 않습니다."
+        : "수행평가 분할점수·학생 데이터가 없어 계산하지 않습니다.";
+      combinedSkipEl.hidden = false;
+      app.semesterState.lastRatios = { exam1: d1, combined: null };
+    }
+
+    app.persist?.();
+  }
+
+  function calcExam2Targets() {
+    const errEl = document.getElementById("sf-exam2-error");
+    const resultEl = document.getElementById("sf-exam2-result");
+    const { ratios, error } = readTargetRatios();
+
+    if (error) {
+      errEl.textContent = error;
+      errEl.hidden = false;
+      resultEl.hidden = true;
+      return;
+    }
+
+    const e1 = app.semesterState.exam1Cutoffs;
+    const pf = app.semesterState.perfCutoffs;
+    const config = getConfig(app);
+
+    const pfOk = Array.isArray(pf) && pf.length === config.perfCount && pf.every(Boolean);
+    const aligned = getAlignedScores();
+
+    if (!e1 || !pfOk || !aligned.exam1Scores.length) {
+      errEl.textContent = aligned.issues[0] || "학생 데이터와 분할점수를 모두 준비해 주세요.";
+      errEl.hidden = false;
+      resultEl.hidden = true;
+      return;
+    }
+
+    app.semesterState.targetRatios = ratios;
+    const result = solveExam2ForTargetRatios(
+      aligned.exam1Scores,
+      aligned.perfScoresByArea,
+      ratios,
+      e1,
+      pf,
       config,
       app.gradeMode
     );
 
-    if (issues.length) {
-      errEl.textContent = issues[0];
+    if (result.error || !result.exam2Cutoffs) {
+      errEl.textContent = result.error || "정기2 추정분할점수 초안을 계산할 수 없습니다.";
       errEl.hidden = false;
       resultEl.hidden = true;
       return;
@@ -166,104 +420,82 @@ export function initExam2Tuner(app) {
 
     errEl.hidden = true;
     resultEl.hidden = false;
-
-    app.tunerState = { exam1, perf, target, exam2Suggested };
-    app.tunerResult = { exam2Suggested, target, exam1, perf };
+    app.semesterState.lastResult = result;
 
     const keys = getBoundaryKeys(app.gradeMode);
-    document.querySelector("#tuner-exam2-table tbody").innerHTML = keys
-      .map((k) => `<tr><td>${BOUNDARY_LABELS[k]}</td><td><strong>${exam2Suggested[k]}</strong></td></tr>`)
-      .join("");
-
-    const beforeFinal = combineCutoffs(exam1, emptyExam2, perf, config, app.gradeMode);
-    const afterFinal = combineCutoffs(exam1, exam2Suggested, perf, config, app.gradeMode);
-
-    document.querySelector("#tuner-compare-table tbody").innerHTML = keys
+    document.querySelector("#sf-exam2-table tbody").innerHTML = keys
       .map(
-        (k) => `
-      <tr>
-        <td>${BOUNDARY_LABELS[k]}</td>
-        <td>${beforeFinal[k]}</td>
-        <td>${target[k]}</td>
-        <td><strong>${afterFinal[k]}</strong></td>
-      </tr>`
+        (k) =>
+          `<tr><td>${BOUNDARY_LABELS[k]}</td><td><strong>${result.exam2Cutoffs[k]}</strong></td></tr>`
       )
       .join("");
 
-    persistTuner(app);
+    document.querySelector("#sf-final-table tbody").innerHTML = keys
+      .map(
+        (k) =>
+          `<tr><td>${BOUNDARY_LABELS[k]}</td><td>${result.targetFinal[k]}</td></tr>`
+      )
+      .join("");
+
+    if (result.rawValues) {
+      document.getElementById("sf-raw-values-wrap").innerHTML = `
+        <h3 class="sub-heading">정기2 역산 원값 (5점 반올림 전)</h3>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead><tr><th>경계</th><th>원값</th></tr></thead>
+            <tbody>${keys
+              .map(
+                (k) =>
+                  `<tr><td>${BOUNDARY_LABELS[k]}</td><td>${Math.round(result.rawValues[k] * 10) / 10}</td></tr>`
+              )
+              .join("")}</tbody>
+          </table>
+        </div>`;
+    } else {
+      document.getElementById("sf-raw-values-wrap").innerHTML = "";
+    }
+
+    if (result.achieved) {
+      document.getElementById("sf-achieved-wrap").innerHTML = `
+        <h3 class="sub-heading">가정 적용 후 예상 최종 비율</h3>
+        ${ratioTableHtml(result.achieved.ratios, result.achieved.counts, result.achieved.total)}`;
+    }
+
+    app.persist?.();
   }
 
-  document.getElementById("calc-tuner").addEventListener("click", calculateTuner);
+  document.getElementById("sf-parse-data").addEventListener("click", () => parseDataInputs());
+  document.getElementById("sf-load-cutoffs").addEventListener("click", loadCutoffsFromBasic);
+  document.getElementById("sf-calc-ratios").addEventListener("click", calcRatios);
+  document.getElementById("sf-calc-exam2").addEventListener("click", calcExam2Targets);
 
-  document.getElementById("tuner-load-exam1").addEventListener("click", () => {
-    if (app.components?.exam1 || app.basicState?.exam1) {
-      writeGroup("t1", app.components?.exam1 || app.basicState.exam1);
-    } else {
-      alert("기본 산출 탭에 정기1 데이터가 없습니다.");
-    }
-  });
-
-  document.getElementById("tuner-load-perf").addEventListener("click", () => {
-    if (app.components?.perf || app.basicState?.perf) {
-      writeGroup("tp", app.components?.perf || app.basicState.perf);
-    } else {
-      alert("기본 산출 탭에 수행평가 데이터가 없습니다.");
-    }
-  });
-
-  document.getElementById("tuner-load-target").addEventListener("click", () => {
-    if (app.finalCutoffs) {
-      writeGroup("tt", app.finalCutoffs);
-    } else {
-      alert("기본 산출 탭에서 먼저 최종 분할점수를 계산해 주세요.");
-    }
-  });
-
-  document.getElementById("apply-tuner-basic").addEventListener("click", () => {
-    if (!app.tunerResult?.exam2Suggested) {
-      alert("먼저 초안을 계산해 주세요.");
+  document.getElementById("sf-apply-exam2").addEventListener("click", () => {
+    const cutoffs = app.semesterState.lastResult?.exam2Cutoffs;
+    if (!cutoffs) {
+      alert("먼저 정기시험2 추정분할점수 초안을 산출해 주세요.");
       return;
     }
-    pushExamCutoffToSession("mid2", app.tunerResult.exam2Suggested);
-    applyExamCutoffsToBasic("mid2", app.tunerResult.exam2Suggested, app);
-    alert("정기시험2 분할점수가 기본 산출 탭에 적용되었습니다.");
+    pushExamCutoffToSession("mid2", cutoffs);
+    applyExamCutoffsToBasic("mid2", cutoffs, app);
+    alert("정기시험2 추정분할점수 초안이 기본 산출 탭에 적용되었습니다.");
     app.switchTab?.("basic");
   });
 
   app.registerGradeModeChange(() => {
-    renderInputs();
-    bindPersist(app);
+    renderTargetRatioInputs();
+    updateCutoffStatus();
   });
 
-  app.registerStateChange(() => updateWeightDisplay(app));
+  app.registerStateChange(() => {
+    renderPerfInputSections(app);
+    updateCutoffStatus();
+  });
 
-  function bindPersist(app) {
-    const keys = getBoundaryKeys(app.gradeMode);
-    for (const p of ["t1", "tp", "tt"]) {
-      for (const k of keys) {
-        const el = document.getElementById(`${p}-${k}`);
-        if (el) el.addEventListener("input", () => persistTuner(app));
-      }
-    }
-  }
+  renderTargetRatioInputs();
+  renderPerfInputSections(app);
+  updateCutoffStatus();
 
-  function persistTuner(app) {
-    app.tunerState = {
-      exam1: readGroup("t1"),
-      perf: readGroup("tp"),
-      target: readGroup("tt"),
-      exam2Suggested: app.tunerResult?.exam2Suggested,
-    };
-    app.persist?.();
+  if (app.semesterState.exam1Paste) {
+    document.getElementById("sf-exam1-paste").value = app.semesterState.exam1Paste;
   }
-
-  if (app.tunerState) {
-    renderInputs();
-    writeGroup("t1", app.tunerState.exam1);
-    writeGroup("tp", app.tunerState.perf);
-    writeGroup("tt", app.tunerState.target);
-  } else {
-    renderInputs();
-  }
-  bindPersist(app);
 }

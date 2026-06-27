@@ -10,6 +10,10 @@ import {
   computeContributions,
   validateCombineInputs,
   defaultComponentConfig,
+  normalizeComponentConfig,
+  normalizePerfCutoffs,
+  MAX_PERF_AREAS,
+  perfWeightSum,
 } from "../core/cutoffs.js";
 import {
   readJsonFile,
@@ -34,7 +38,7 @@ function writeComponentCutoffs(prefix, cutoffs, mode) {
   }
 }
 
-function renderBoundaryInputs(containerId, prefix, mode, maxScore) {
+function renderBoundaryInputs(containerId, prefix, mode, maxScore, step = "0.1") {
   const container = document.getElementById(containerId);
   if (!container) return;
   const keys = getBoundaryKeys(mode);
@@ -43,14 +47,27 @@ function renderBoundaryInputs(containerId, prefix, mode, maxScore) {
       (k) => `
     <div class="field boundary-field">
       <label for="${prefix}-${k}">${BOUNDARY_LABELS[k]}</label>
-      <input type="number" id="${prefix}-${k}" min="0" max="${maxScore}" step="0.1" placeholder="0~${maxScore}">
+      <input type="number" id="${prefix}-${k}" min="0" max="${maxScore}" step="${step}" placeholder="0~${maxScore}">
     </div>`
     )
     .join("");
 }
 
+function readPerfCount() {
+  const checked = document.querySelector('input[name="perf-count"]:checked');
+  return Math.min(MAX_PERF_AREAS, Math.max(1, parseInt(checked?.value || "1", 10)));
+}
+
 function readComponentConfig() {
-  return {
+  const perfCount = readPerfCount();
+  const perfAreas = [];
+  for (let i = 0; i < perfCount; i++) {
+    perfAreas.push({
+      weight: parseFloat(document.getElementById(`w-perf-${i}`)?.value) || 0,
+      max: parseFloat(document.getElementById(`max-perf-${i}`)?.value) || 0,
+    });
+  }
+  return normalizeComponentConfig({
     exam1: {
       weight: parseFloat(document.getElementById("w-exam1").value) || 0,
       max: parseFloat(document.getElementById("max-exam1").value) || 0,
@@ -59,56 +76,134 @@ function readComponentConfig() {
       weight: parseFloat(document.getElementById("w-exam2").value) || 0,
       max: parseFloat(document.getElementById("max-exam2").value) || 0,
     },
-    perf: {
-      weight: parseFloat(document.getElementById("w-perf").value) || 0,
-      max: parseFloat(document.getElementById("max-perf").value) || 0,
-    },
-  };
+    perfCount,
+    perfAreas,
+  });
+}
+
+function readPerfCutoffs(mode) {
+  const count = readPerfCount();
+  const areas = [];
+  for (let i = 0; i < count; i++) {
+    areas.push(readComponentCutoffs(`pf${i}`, mode));
+  }
+  return areas;
+}
+
+function renderConfigTable(app) {
+  const config = app.componentConfig ? normalizeComponentConfig(app.componentConfig) : defaultComponentConfig();
+  const count = config.perfCount || 1;
+  const tbody = document.getElementById("config-table-body");
+  if (!tbody) return;
+
+  let rows = `
+    <tr>
+      <td>정기시험1</td>
+      <td><input type="number" id="w-exam1" class="inline-input" min="0" max="100" step="1" value="${config.exam1.weight}"></td>
+      <td><input type="number" id="max-exam1" class="inline-input" min="0.1" step="0.1" value="${config.exam1.max}"></td>
+    </tr>
+    <tr>
+      <td>정기시험2</td>
+      <td><input type="number" id="w-exam2" class="inline-input" min="0" max="100" step="1" value="${config.exam2.weight}"></td>
+      <td><input type="number" id="max-exam2" class="inline-input" min="0.1" step="0.1" value="${config.exam2.max}"></td>
+    </tr>`;
+
+  for (let i = 0; i < count; i++) {
+    const area = config.perfAreas[i] || { weight: 0, max: 0 };
+    const label = count > 1 ? `수행평가 ${i + 1}` : "수행평가";
+    rows += `
+    <tr>
+      <td>${label}</td>
+      <td><input type="number" id="w-perf-${i}" class="inline-input" min="0" max="100" step="1" value="${area.weight}"></td>
+      <td>
+        <input type="number" id="max-perf-${i}" class="inline-input" min="0.1" step="0.1" value="${area.max}">
+        <button type="button" class="text-btn sync-btn sync-perf-max" data-idx="${i}">반영비율에 맞추기</button>
+      </td>
+    </tr>`;
+  }
+
+  const selectedCount = config.perfCount || count;
+  rows += `
+    <tr class="perf-count-row">
+      <td>수행평가 영역 수</td>
+      <td colspan="2">
+        <div class="perf-count-inline">
+          ${[1, 2, 3, 4]
+            .map(
+              (n) => `
+            <label class="radio-label radio-inline">
+              <input type="radio" name="perf-count" value="${n}" ${n === selectedCount ? "checked" : ""}>
+              ${n}개
+            </label>`
+            )
+            .join("")}
+        </div>
+      </td>
+    </tr>`;
+
+  tbody.innerHTML = rows;
+}
+
+function renderPerfCards(app) {
+  const config = readComponentConfig();
+  const grid = document.getElementById("perf-cards-grid");
+  if (!grid) return;
+
+  grid.innerHTML = config.perfAreas
+    .map((area, i) => {
+      const label = config.perfAreas.length > 1 ? `수행평가 ${i + 1}` : "수행평가";
+      return `
+      <section class="card component-card">
+        <h2>${label} 분할점수</h2>
+        <p class="component-max-hint" id="hint-perf-${i}">만점 ${area.max}점 척도</p>
+        <div id="perf-${i}-boundaries" class="boundaries-grid"></div>
+      </section>`;
+    })
+    .join("");
+
+  for (let i = 0; i < config.perfAreas.length; i++) {
+    renderBoundaryInputs(`perf-${i}-boundaries`, `pf${i}`, app.gradeMode, config.perfAreas[i].max);
+    const saved = app.basicState?.perfAreas?.[i];
+    if (saved) writeComponentCutoffs(`pf${i}`, saved, app.gradeMode);
+    else if (app.basicState?.perf && i === 0) writeComponentCutoffs(`pf0`, app.basicState.perf, app.gradeMode);
+  }
 }
 
 function updateBoundaryMaxAttrs(mode, config) {
-  renderBoundaryInputs("exam1-boundaries", "e1", mode, config.exam1.max);
-  renderBoundaryInputs("exam2-boundaries", "e2", mode, config.exam2.max);
-  renderBoundaryInputs("perf-boundaries", "pf", mode, config.perf.max);
+  renderBoundaryInputs("exam1-boundaries", "e1", mode, config.exam1.max, "0.01");
+  renderBoundaryInputs("exam2-boundaries", "e2", mode, config.exam2.max, "0.01");
+  for (let i = 0; i < config.perfAreas.length; i++) {
+    renderBoundaryInputs(`perf-${i}-boundaries`, `pf${i}`, mode, config.perfAreas[i].max);
+  }
+}
+
+function updateMaxHints(config) {
+  document.getElementById("hint-exam1").textContent = `만점 ${config.exam1.max}점 척도`;
+  document.getElementById("hint-exam2").textContent = `만점 ${config.exam2.max}점 척도`;
+  for (let i = 0; i < config.perfAreas.length; i++) {
+    const el = document.getElementById(`hint-perf-${i}`);
+    if (el) el.textContent = `만점 ${config.perfAreas[i].max}점 척도`;
+  }
 }
 
 let appRef;
 
 export function initBasic(app) {
   appRef = app;
-  app.perfMaxLocked = app.perfMaxLocked ?? false;
-  app.componentConfig = app.componentConfig || defaultComponentConfig();
+  app.perfMaxLocked = app.perfMaxLocked ?? {};
+  app.componentConfig = normalizeComponentConfig(app.componentConfig || defaultComponentConfig());
 
   const root = document.getElementById("panel-basic");
   root.innerHTML = `
     <section class="card">
       <h2>요소별 반영 비율 · 만점</h2>
-      <p class="notice">기여분 = 분할점수 × (반영비율 ÷ 만점). 수행평가는 기본적으로 만점 = 반영비율입니다.</p>
+      <p class="notice">환산점 = 분할점수 × (반영비율 ÷ 만점). 수행평가는 기본적으로 영역별 만점 = 반영비율입니다.</p>
       <div class="table-wrap">
         <table class="data-table config-table">
           <thead>
             <tr><th>요소</th><th>반영 비율 (%)</th><th>만점 (점)</th></tr>
           </thead>
-          <tbody>
-            <tr>
-              <td>정기시험1</td>
-              <td><input type="number" id="w-exam1" class="inline-input" min="0" max="100" step="1" value="30"></td>
-              <td><input type="number" id="max-exam1" class="inline-input" min="0.1" step="0.1" value="100"></td>
-            </tr>
-            <tr>
-              <td>정기시험2</td>
-              <td><input type="number" id="w-exam2" class="inline-input" min="0" max="100" step="1" value="30"></td>
-              <td><input type="number" id="max-exam2" class="inline-input" min="0.1" step="0.1" value="100"></td>
-            </tr>
-            <tr>
-              <td>수행평가</td>
-              <td><input type="number" id="w-perf" class="inline-input" min="0" max="100" step="1" value="40"></td>
-              <td>
-                <input type="number" id="max-perf" class="inline-input" min="0.1" step="0.1" value="40">
-                <button type="button" id="sync-perf-max" class="text-btn sync-btn">반영비율에 맞추기</button>
-              </td>
-            </tr>
-          </tbody>
+          <tbody id="config-table-body"></tbody>
         </table>
       </div>
       <p id="weight-status" class="sum-status ok">반영 비율 합계: 100%</p>
@@ -130,7 +225,7 @@ export function initBasic(app) {
       <section class="card component-card">
         <div class="card-head-row">
           <h2>정기시험2 분할점수</h2>
-          <button type="button" class="secondary-btn small-btn" id="load-exam2-session">도우미/초안 결과 불러오기</button>
+          <button type="button" class="secondary-btn small-btn" id="load-exam2-session">도우미/학기말 결과 불러오기</button>
         </div>
         <p class="component-max-hint" id="hint-exam2">만점 100점 척도</p>
         <div id="exam2-boundaries" class="boundaries-grid"></div>
@@ -139,12 +234,9 @@ export function initBasic(app) {
           <button type="button" class="secondary-btn small-btn" id="btn-import-exam2">JSON 업로드</button>
         </div>
       </section>
-      <section class="card component-card">
-        <h2>수행평가 분할점수</h2>
-        <p class="component-max-hint" id="hint-perf">만점 40점 척도</p>
-        <div id="perf-boundaries" class="boundaries-grid"></div>
-      </section>
     </div>
+
+    <div id="perf-cards-grid" class="components-grid"></div>
 
     <section class="card">
       <button type="button" id="calc-basic" class="primary-btn">최종 분할점수 산출</button>
@@ -158,15 +250,7 @@ export function initBasic(app) {
       </div>
       <div class="table-wrap">
         <table class="data-table" id="basic-result-table">
-          <thead>
-            <tr>
-              <th>경계</th>
-              <th>정기1</th><th>기여</th>
-              <th>정기2</th><th>기여</th>
-              <th>수행</th><th>기여</th>
-              <th>최종</th>
-            </tr>
-          </thead>
+          <thead id="basic-result-head"></thead>
           <tbody></tbody>
         </table>
       </div>
@@ -174,6 +258,19 @@ export function initBasic(app) {
       <div id="grade-ranges" class="grade-ranges"></div>
     </section>
   `;
+
+  function rebuildPerfUI(preserveCutoffs) {
+    const prev = preserveCutoffs ? readPerfCutoffs(app.gradeMode) : null;
+    renderConfigTable(app);
+    renderPerfCards(app);
+    bindConfigInputs(app, onPerfCountChange);
+    if (prev) {
+      for (let i = 0; i < prev.length; i++) {
+        writeComponentCutoffs(`pf${i}`, prev[i], app.gradeMode);
+      }
+    }
+    updateWeightStatus();
+  }
 
   function refreshBoundaries() {
     const config = readComponentConfig();
@@ -183,22 +280,21 @@ export function initBasic(app) {
     bindInputs(app);
   }
 
-  function updateMaxHints(config) {
-    document.getElementById("hint-exam1").textContent = `만점 ${config.exam1.max}점 척도`;
-    document.getElementById("hint-exam2").textContent = `만점 ${config.exam2.max}점 척도`;
-    document.getElementById("hint-perf").textContent = `만점 ${config.perf.max}점 척도`;
-  }
-
   function onConfigInput(changedId) {
     const config = readComponentConfig();
 
-    if (changedId === "w-perf" && !app.perfMaxLocked) {
-      document.getElementById("max-perf").value = config.perf.weight;
-      config.perf.max = config.perf.weight;
+    const perfMatch = changedId.match(/^w-perf-(\d+)$/);
+    if (perfMatch) {
+      const idx = parseInt(perfMatch[1], 10);
+      if (!app.perfMaxLocked[idx]) {
+        const w = parseFloat(document.getElementById(`w-perf-${idx}`).value) || 0;
+        document.getElementById(`max-perf-${idx}`).value = w;
+      }
     }
 
-    if (changedId === "max-perf") {
-      app.perfMaxLocked = true;
+    if (changedId.startsWith("max-perf-")) {
+      const idx = parseInt(changedId.replace("max-perf-", ""), 10);
+      app.perfMaxLocked[idx] = true;
     }
 
     if (changedId.startsWith("max-")) {
@@ -211,8 +307,44 @@ export function initBasic(app) {
     persistBasic(app);
   }
 
-  refreshBoundaries();
+  function onPerfCountChange() {
+    const newCount = readPerfCount();
+    const oldConfig = normalizeComponentConfig(app.componentConfig || readComponentConfig());
+    const oldAreas = oldConfig.perfAreas;
+    const oldCutoffs = readPerfCutoffs(app.gradeMode);
+
+    const newAreas = [];
+    for (let i = 0; i < newCount; i++) {
+      if (oldAreas[i]) {
+        newAreas.push({ ...oldAreas[i] });
+      } else {
+        const totalPerf = perfWeightSum(oldConfig) || 40;
+        const perArea = Math.round((totalPerf / newCount) * 10) / 10;
+        newAreas.push({ weight: perArea, max: perArea });
+      }
+    }
+
+    app.componentConfig = normalizeComponentConfig({
+      ...readComponentConfig(),
+      perfCount: newCount,
+      perfAreas: newAreas,
+    });
+
+    rebuildPerfUI(false);
+
+    for (let i = 0; i < Math.min(oldCutoffs.length, newCount); i++) {
+      writeComponentCutoffs(`pf${i}`, oldCutoffs[i], app.gradeMode);
+    }
+
+    refreshBoundaries();
+    persistBasic(app);
+    app.notifyStateChange?.();
+  }
+
+  renderConfigTable(app);
+  renderPerfCards(app);
   restoreFromState(app);
+  refreshBoundaries();
   app.registerGradeModeChange(refreshBoundaries);
 
   document.getElementById("calc-basic").addEventListener("click", () => calculate(app));
@@ -224,26 +356,80 @@ export function initBasic(app) {
   document.getElementById("import-exam1").addEventListener("change", (e) => importExam(e, "e1", app));
   document.getElementById("import-exam2").addEventListener("change", (e) => importExam(e, "e2", app));
 
-  document.getElementById("sync-perf-max").addEventListener("click", () => {
-    const w = parseFloat(document.getElementById("w-perf").value) || 0;
-    document.getElementById("max-perf").value = w;
-    app.perfMaxLocked = false;
-    updateBoundaryMaxAttrs(app.gradeMode, readComponentConfig());
-    updateMaxHints(readComponentConfig());
-    persistBasic(app);
+  bindConfigInputs(app, onPerfCountChange);
+  updateWeightStatus();
+
+  app.refreshBasicUI = () => {
+    restoreFromState(app);
+    refreshBoundaries();
+    bindConfigInputs(app, onPerfCountChange);
+  };
+}
+
+function bindConfigInputs(app, onPerfCountChange) {
+  ["w-exam1", "w-exam2", "max-exam1", "max-exam2"].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener("input", () => onConfigInputDelegated(id, app));
   });
 
-  ["w-exam1", "w-exam2", "w-perf", "max-exam1", "max-exam2", "max-perf"].forEach((id) => {
-    document.getElementById(id).addEventListener("input", () => onConfigInput(id));
-  });
+  const count = readPerfCount();
+  for (let i = 0; i < count; i++) {
+    for (const id of [`w-perf-${i}`, `max-perf-${i}`]) {
+      const el = document.getElementById(id);
+      if (el) el.addEventListener("input", () => onConfigInputDelegated(id, app));
+    }
+    const syncBtn = document.querySelector(`.sync-perf-max[data-idx="${i}"]`);
+    if (syncBtn) {
+      syncBtn.addEventListener("click", () => {
+        const w = parseFloat(document.getElementById(`w-perf-${i}`).value) || 0;
+        document.getElementById(`max-perf-${i}`).value = w;
+        app.perfMaxLocked[i] = false;
+        updateBoundaryMaxAttrs(app.gradeMode, readComponentConfig());
+        updateMaxHints(readComponentConfig());
+        persistBasic(app);
+      });
+    }
+  }
+
+  if (onPerfCountChange) {
+    document.querySelectorAll('input[name="perf-count"]').forEach((el) => {
+      el.addEventListener("change", () => {
+        if (el.checked) onPerfCountChange();
+      });
+    });
+  }
+}
+
+function onConfigInputDelegated(changedId, app) {
+  const config = readComponentConfig();
+  const perfMatch = changedId.match(/^w-perf-(\d+)$/);
+  if (perfMatch) {
+    const idx = parseInt(perfMatch[1], 10);
+    if (!app.perfMaxLocked[idx]) {
+      const w = parseFloat(document.getElementById(`w-perf-${idx}`).value) || 0;
+      document.getElementById(`max-perf-${idx}`).value = w;
+    }
+  }
+  if (changedId.startsWith("max-perf-")) {
+    const idx = parseInt(changedId.replace("max-perf-", ""), 10);
+    app.perfMaxLocked[idx] = true;
+  }
+  if (changedId.startsWith("max-")) {
+    updateBoundaryMaxAttrs(app.gradeMode, readComponentConfig());
+    updateMaxHints(readComponentConfig());
+  }
   updateWeightStatus();
+  persistBasic(app);
 }
 
 function bindInputs(app) {
-  const ids = ["w-exam1", "w-exam2", "w-perf", "max-exam1", "max-exam2", "max-perf"];
+  const ids = ["w-exam1", "w-exam2", "max-exam1", "max-exam2"];
   const keys = getBoundaryKeys(app.gradeMode);
-  for (const p of ["e1", "e2", "pf"]) {
+  for (const p of ["e1", "e2"]) {
     for (const k of keys) ids.push(`${p}-${k}`);
+  }
+  for (let i = 0; i < readPerfCount(); i++) {
+    for (const k of keys) ids.push(`pf${i}-${k}`);
   }
   for (const id of ids) {
     const el = document.getElementById(id);
@@ -253,10 +439,25 @@ function bindInputs(app) {
 
 function updateWeightStatus() {
   const config = readComponentConfig();
-  const sum = Math.round((config.exam1.weight + config.exam2.weight + config.perf.weight) * 10) / 10;
+  const sum = Math.round((config.exam1.weight + config.exam2.weight + perfWeightSum(config)) * 10) / 10;
   const el = document.getElementById("weight-status");
-  el.textContent = `반영 비율 합계: ${sum}%`;
+  el.textContent = `반영 비율 합계: ${sum}% (수행 ${perfWeightSum(config)}%)`;
   el.className = sum === 100 ? "sum-status ok" : "sum-status err";
+}
+
+function buildResultTableHead(config) {
+  const perfCols = config.perfAreas.map((_, i) =>
+    config.perfAreas.length > 1 ? `수행${i + 1}` : "수행"
+  );
+  return `
+    <tr>
+      <th>경계</th>
+      <th>정기1</th><th>환산점</th>
+      <th>정기2</th><th>환산점</th>
+      ${perfCols.map((l) => `<th>${l}</th><th>환산점</th>`).join("")}
+      <th>수행합</th><th>환산점</th>
+      <th>최종</th>
+    </tr>`;
 }
 
 function calculate(app) {
@@ -264,11 +465,11 @@ function calculate(app) {
   const config = readComponentConfig();
   const exam1 = readComponentCutoffs("e1", mode);
   const exam2 = readComponentCutoffs("e2", mode);
-  const perf = readComponentCutoffs("pf", mode);
+  const perfAreas = readPerfCutoffs(mode);
   const errEl = document.getElementById("basic-error");
   const resultEl = document.getElementById("basic-result");
 
-  const issues = validateCombineInputs(exam1, exam2, perf, config, mode);
+  const issues = validateCombineInputs(exam1, exam2, perfAreas, config, mode);
   if (issues.length) {
     errEl.textContent = issues[0];
     errEl.hidden = false;
@@ -276,7 +477,7 @@ function calculate(app) {
     return;
   }
 
-  const finalCutoffs = combineCutoffs(exam1, exam2, perf, config, mode);
+  const finalCutoffs = combineCutoffs(exam1, exam2, perfAreas, config, mode);
   const finalIssues = validateCutoffs(finalCutoffs, mode, 100);
   if (finalIssues.length) {
     errEl.textContent = `최종 분할점수가 단조 감소하지 않습니다: ${finalIssues[0]}`;
@@ -290,19 +491,28 @@ function calculate(app) {
 
   app.finalCutoffs = finalCutoffs;
   app.componentConfig = config;
-  app.components = { exam1, exam2, perf };
+  app.components = { exam1, exam2, perfAreas };
 
   const keys = getBoundaryKeys(mode);
+  document.getElementById("basic-result-head").innerHTML = buildResultTableHead(config);
+
   const tbody = document.querySelector("#basic-result-table tbody");
   tbody.innerHTML = keys
     .map((k) => {
-      const c = computeContributions(exam1, exam2, perf, config, mode, k);
+      const c = computeContributions(exam1, exam2, perfAreas, config, mode, k);
+      const perfCells = c.perfByArea
+        .map((contrib, i) => {
+          const score = perfAreas[i][k];
+          return `<td>${score ?? ""}</td><td class="contrib">${contrib}</td>`;
+        })
+        .join("");
       return `
     <tr>
       <td>${BOUNDARY_LABELS[k]}</td>
       <td>${exam1[k]}</td><td class="contrib">${c.exam1}</td>
       <td>${exam2[k]}</td><td class="contrib">${c.exam2}</td>
-      <td>${perf[k]}</td><td class="contrib">${c.perf}</td>
+      ${perfCells}
+      <td></td><td class="contrib"><strong>${c.perf}</strong></td>
       <td><strong>${finalCutoffs[k]}</strong></td>
     </tr>`;
     })
@@ -360,7 +570,7 @@ async function importExam(e, prefix, app) {
 function loadSession(exam, prefix, app) {
   const cutoffs = pullExamCutoffFromSession(exam);
   if (!cutoffs) {
-    alert("저장된 결과가 없습니다. 정기시험 도우미 또는 정기시험2 초안 도우미에서 먼저 적용해 주세요.");
+    alert("저장된 결과가 없습니다. 정기시험 추정분할점수 산출 도우미 또는 학기말 최종 분할점수 산출 도우미에서 먼저 적용해 주세요.");
     return;
   }
   writeComponentCutoffs(prefix, cutoffs, app.gradeMode);
@@ -377,7 +587,7 @@ function persistBasic(app) {
     perfMaxLocked: app.perfMaxLocked,
     exam1: readComponentCutoffs("e1", mode),
     exam2: readComponentCutoffs("e2", mode),
-    perf: readComponentCutoffs("pf", mode),
+    perfAreas: readPerfCutoffs(mode),
   };
   app.persist?.();
 }
@@ -387,37 +597,42 @@ function restoreCutoffsFromState(app) {
   if (!s) return;
   if (s.exam1) writeComponentCutoffs("e1", s.exam1, app.gradeMode);
   if (s.exam2) writeComponentCutoffs("e2", s.exam2, app.gradeMode);
-  if (s.perf) writeComponentCutoffs("pf", s.perf, app.gradeMode);
+  const perfAreas = s.perfAreas || (s.perf ? [s.perf] : null);
+  if (perfAreas) {
+    for (let i = 0; i < perfAreas.length; i++) {
+      writeComponentCutoffs(`pf${i}`, perfAreas[i], app.gradeMode);
+    }
+  }
 }
 
 function restoreFromState(app) {
   const s = app.basicState;
-  if (!s) {
-    if (app.componentConfig) {
-      document.getElementById("w-exam1").value = app.componentConfig.exam1.weight;
-      document.getElementById("w-exam2").value = app.componentConfig.exam2.weight;
-      document.getElementById("w-perf").value = app.componentConfig.perf.weight;
-      document.getElementById("max-exam1").value = app.componentConfig.exam1.max;
-      document.getElementById("max-exam2").value = app.componentConfig.exam2.max;
-      document.getElementById("max-perf").value = app.componentConfig.perf.max;
-    }
-    return;
-  }
+  const config = s?.componentConfig
+    ? normalizeComponentConfig(s.componentConfig)
+    : normalizeComponentConfig(app.componentConfig);
 
-  if (s.componentConfig) {
-    document.getElementById("w-exam1").value = s.componentConfig.exam1.weight;
-    document.getElementById("w-exam2").value = s.componentConfig.exam2.weight;
-    document.getElementById("w-perf").value = s.componentConfig.perf.weight;
-    document.getElementById("max-exam1").value = s.componentConfig.exam1.max;
-    document.getElementById("max-exam2").value = s.componentConfig.exam2.max;
-    document.getElementById("max-perf").value = s.componentConfig.perf.max;
-    app.componentConfig = s.componentConfig;
-    app.perfMaxLocked = s.perfMaxLocked ?? false;
-  } else if (s.weights) {
+  app.componentConfig = config;
+
+  renderConfigTable(app);
+  renderPerfCards(app);
+
+  if (s?.componentConfig || config) {
+    document.getElementById("w-exam1").value = config.exam1.weight;
+    document.getElementById("w-exam2").value = config.exam2.weight;
+    document.getElementById("max-exam1").value = config.exam1.max;
+    document.getElementById("max-exam2").value = config.exam2.max;
+    for (let i = 0; i < config.perfAreas.length; i++) {
+      const wEl = document.getElementById(`w-perf-${i}`);
+      const mEl = document.getElementById(`max-perf-${i}`);
+      if (wEl) wEl.value = config.perfAreas[i].weight;
+      if (mEl) mEl.value = config.perfAreas[i].max;
+    }
+    app.perfMaxLocked = s?.perfMaxLocked ?? {};
+  } else if (s?.weights) {
     document.getElementById("w-exam1").value = s.weights.exam1;
     document.getElementById("w-exam2").value = s.weights.exam2;
-    document.getElementById("w-perf").value = s.weights.perf;
-    document.getElementById("max-perf").value = s.weights.perf;
+    document.getElementById("w-perf-0").value = s.weights.perf;
+    document.getElementById("max-perf-0").value = s.weights.perf;
   }
 
   updateWeightStatus();
@@ -431,5 +646,16 @@ export function applyExamCutoffsToBasic(exam, cutoffs, app) {
 }
 
 export function getConfigForApp(app) {
-  return app.componentConfig || app.basicState?.componentConfig || defaultComponentConfig();
+  return normalizeComponentConfig(
+    app.componentConfig || app.basicState?.componentConfig || defaultComponentConfig()
+  );
+}
+
+export function getPerfCutoffsForApp(app) {
+  const components = app.components;
+  if (components?.perfAreas) return components.perfAreas;
+  if (app.basicState?.perfAreas) return app.basicState.perfAreas;
+  if (components?.perf) return [components.perf];
+  if (app.basicState?.perf) return [app.basicState.perf];
+  return [];
 }

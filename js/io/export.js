@@ -1,4 +1,5 @@
-import { BOUNDARY_LABELS, gradeColumnsForMode } from "../core/grades.js";
+import { BOUNDARY_LABELS, passRateGradeColumnsForMode, boundaryForPassRateGrade } from "../core/grades.js";
+import { normalizeComponentConfig } from "../core/cutoffs.js";
 
 export function downloadJson(data, filename) {
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
@@ -65,16 +66,27 @@ export function exportToExcel(wbName, sheets) {
 }
 
 export function buildBasicExcelRows(finalCutoffs, gradeRanges, config, components) {
+  const c = normalizeComponentConfig(config);
+  const perfAreas = components.perfAreas || (components.perf ? [components.perf] : []);
+
   const rows = [
     ["추정 분할점수 — 기본 산출 결과"],
     [],
     ["요소", "반영 비율(%)", "만점(점)"],
-    ["정기시험1", config.exam1.weight, config.exam1.max],
-    ["정기시험2", config.exam2.weight, config.exam2.max],
-    ["수행평가", config.perf.weight, config.perf.max],
-    [],
-    ["경계", "정기시험1", "정기시험2", "수행평가", "최종"],
+    ["정기시험1", c.exam1.weight, c.exam1.max],
+    ["정기시험2", c.exam2.weight, c.exam2.max],
   ];
+
+  c.perfAreas.forEach((area, i) => {
+    const label = c.perfAreas.length > 1 ? `수행평가 ${i + 1}` : "수행평가";
+    rows.push([label, area.weight, area.max]);
+  });
+
+  rows.push([]);
+  const perfHeaders = c.perfAreas.map((_, i) =>
+    c.perfAreas.length > 1 ? `수행${i + 1}` : "수행"
+  );
+  rows.push(["경계", "정기시험1", "정기시험2", ...perfHeaders, "최종"]);
 
   for (const key of Object.keys(BOUNDARY_LABELS)) {
     if (finalCutoffs[key] === undefined) continue;
@@ -82,7 +94,7 @@ export function buildBasicExcelRows(finalCutoffs, gradeRanges, config, component
       BOUNDARY_LABELS[key],
       components.exam1[key],
       components.exam2[key],
-      components.perf[key],
+      ...perfAreas.map((p) => p[key]),
       finalCutoffs[key],
     ]);
   }
@@ -97,9 +109,9 @@ export function buildBasicExcelRows(finalCutoffs, gradeRanges, config, component
 }
 
 export function buildExamHelperExcelRows(examLabel, tierRows, cutoffs, passRateMatrix, mode) {
-  const gradeCols = gradeColumnsForMode(mode);
+  const gradeCols = passRateGradeColumnsForMode(mode);
   const rows = [
-    [`정기시험 도우미 — ${examLabel}`],
+    [`정기시험 추정분할점수 산출 도우미 — ${examLabel}`],
     [],
     ["문항구분", "난이도", "해당문항번호", "문항수", "배점합", ...gradeCols],
   ];
@@ -116,10 +128,17 @@ export function buildExamHelperExcelRows(examLabel, tierRows, cutoffs, passRateM
   }
 
   rows.push([]);
-  rows.push(["목표 분할점수", "", "", "", "", ...gradeCols.map((g) => {
-    const b = { A: "AB", B: "BC", C: "CD", D: "DE", E: "DE", 미도달: "E_fail" }[g];
-    return cutoffs[b] ?? "";
-  })]);
+  rows.push([
+    "목표 분할점수",
+    "",
+    "",
+    "",
+    "",
+    ...gradeCols.map((g) => {
+      const b = boundaryForPassRateGrade(g);
+      return b ? cutoffs[b] ?? "" : "";
+    }),
+  ]);
 
   return rows;
 }

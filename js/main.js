@@ -1,6 +1,6 @@
 import { GRADE_MODE_FIVE, GRADE_MODE_SIX } from "./core/grades.js";
 import { saveAppState, loadAppState } from "./io/export.js";
-import { defaultComponentConfig, migrateWeightsToConfig } from "./core/cutoffs.js";
+import { defaultComponentConfig, migrateWeightsToConfig, normalizeComponentConfig } from "./core/cutoffs.js";
 import { initBasic } from "./features/basic.js";
 import { initExamHelper } from "./features/examHelper.js";
 import { initExam2Tuner } from "./features/exam2Tuner.js";
@@ -14,7 +14,7 @@ const app = {
   components: null,
   basicState: null,
   helperState: null,
-  tunerState: null,
+  semesterState: null,
   studentState: null,
   gradeModeCallbacks: [],
   stateChangeCallbacks: [],
@@ -38,7 +38,7 @@ function persist() {
     gradeMode: app.gradeMode,
     basicState: app.basicState,
     helperState: app.helperState,
-    tunerState: app.tunerState,
+    semesterState: app.semesterState,
     studentState: app.studentState,
     finalCutoffs: app.finalCutoffs,
     componentConfig: app.componentConfig,
@@ -58,16 +58,16 @@ function restore() {
   app.gradeMode = saved.gradeMode || GRADE_MODE_FIVE;
   app.basicState = saved.basicState;
   app.helperState = saved.helperState;
-  app.tunerState = saved.tunerState;
+  app.semesterState = saved.semesterState || saved.tunerState;
   app.studentState = saved.studentState;
   app.finalCutoffs = saved.finalCutoffs;
   app.components = saved.components;
   app.perfMaxLocked = saved.perfMaxLocked ?? false;
 
   if (saved.componentConfig) {
-    app.componentConfig = saved.componentConfig;
+    app.componentConfig = normalizeComponentConfig(saved.componentConfig);
   } else if (saved.basicState?.componentConfig) {
-    app.componentConfig = saved.basicState.componentConfig;
+    app.componentConfig = normalizeComponentConfig(saved.basicState.componentConfig);
   } else if (saved.weights || saved.basicState?.weights) {
     app.componentConfig = migrateWeightsToConfig(saved.weights || saved.basicState.weights);
   }
@@ -80,6 +80,7 @@ function restore() {
     switchTab(saved.activeTab);
   }
 
+  app.refreshBasicUI?.();
   app.gradeModeCallbacks.forEach((fn) => fn());
 }
 

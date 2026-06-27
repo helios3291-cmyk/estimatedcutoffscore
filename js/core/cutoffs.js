@@ -1,10 +1,20 @@
-import { round1, getBoundaryKeys, validateCutoffs, roundInt, snapScore5 } from "./grades.js";
+import {
+  round1,
+  getBoundaryKeys,
+  validateCutoffs,
+  roundInt,
+  snapCutoffsMonotonic,
+  BOUNDARY_LABELS,
+} from "./grades.js";
+
+export const MAX_PERF_AREAS = 4;
 
 export function defaultComponentConfig() {
   return {
     exam1: { weight: 30, max: 100 },
     exam2: { weight: 30, max: 100 },
-    perf: { weight: 40, max: 40 },
+    perfCount: 1,
+    perfAreas: [{ weight: 40, max: 40 }],
   };
 }
 
@@ -15,8 +25,49 @@ export function migrateWeightsToConfig(weights) {
   return {
     exam1: { weight: w1, max: 100 },
     exam2: { weight: w2, max: 100 },
-    perf: { weight: w3, max: w3 },
+    perfCount: 1,
+    perfAreas: [{ weight: w3, max: w3 }],
   };
+}
+
+/** Legacy config.perf → perfAreas; ensures perfCount matches array length. */
+export function normalizeComponentConfig(config) {
+  if (!config) return defaultComponentConfig();
+
+  const base = {
+    exam1: config.exam1 || { weight: 30, max: 100 },
+    exam2: config.exam2 || { weight: 30, max: 100 },
+  };
+
+  if (Array.isArray(config.perfAreas) && config.perfAreas.length) {
+    const count = Math.min(MAX_PERF_AREAS, Math.max(1, config.perfCount || config.perfAreas.length));
+    return {
+      ...base,
+      perfCount: count,
+      perfAreas: config.perfAreas.slice(0, count).map((a) => ({
+        weight: a?.weight ?? 0,
+        max: a?.max ?? a?.weight ?? 0,
+      })),
+    };
+  }
+
+  const legacy = config.perf || { weight: 40, max: 40 };
+  return {
+    ...base,
+    perfCount: 1,
+    perfAreas: [{ weight: legacy.weight, max: legacy.max }],
+  };
+}
+
+export function normalizePerfCutoffs(perfOrAreas) {
+  if (Array.isArray(perfOrAreas)) return perfOrAreas;
+  if (perfOrAreas) return [perfOrAreas];
+  return [];
+}
+
+export function perfWeightSum(config) {
+  const c = normalizeComponentConfig(config);
+  return round1(c.perfAreas.reduce((s, a) => s + (a.weight || 0), 0));
 }
 
 export function contribute(score, component) {
@@ -24,33 +75,83 @@ export function contribute(score, component) {
   return round1((score * component.weight) / component.max);
 }
 
-export function combineCutoffs(exam1, exam2, perf, config, mode) {
+export function perfContributionAtBoundary(key, perfCutoffs, config) {
+  const c = normalizeComponentConfig(config);
+  const areas = normalizePerfCutoffs(perfCutoffs);
+  let sum = 0;
+  for (let i = 0; i < c.perfAreas.length; i++) {
+    const cut = areas[i];
+    if (cut && cut[key] != null) {
+      sum += contribute(cut[key], c.perfAreas[i]);
+    }
+  }
+  return round1(sum);
+}
+
+export function studentPerfContribution(perfScores, config) {
+  const c = normalizeComponentConfig(config);
+  let sum = 0;
+  for (let i = 0; i < c.perfAreas.length; i++) {
+    const score = Array.isArray(perfScores) ? perfScores[i] : perfScores;
+    if (Number.isFinite(score)) {
+      sum += contribute(score, c.perfAreas[i]);
+    }
+  }
+  return round1(sum);
+}
+
+export function combineCutoffs(exam1, exam2, perfCutoffs, config, mode) {
   const keys = getBoundaryKeys(mode);
+  const c = normalizeComponentConfig(config);
   const result = {};
 
   for (const key of keys) {
     result[key] = roundInt(
-      contribute(exam1[key], config.exam1) +
-        contribute(exam2[key], config.exam2) +
-        contribute(perf[key], config.perf)
+      contribute(exam1[key], c.exam1) +
+        contribute(exam2[key], c.exam2) +
+        perfContributionAtBoundary(key, perfCutoffs, c)
     );
   }
 
   return result;
 }
 
-export function computeContributions(exam1, exam2, perf, config, mode, key) {
+/** 정기1·수행 환산점 합만으로 부분(정기2 미반영) 분할점수 */
+export function combinePartialCutoffs(exam1, perfCutoffs, config, mode) {
+  const keys = getBoundaryKeys(mode);
+  const c = normalizeComponentConfig(config);
+  const result = {};
+
+  for (const key of keys) {
+    result[key] = roundInt(
+      contribute(exam1[key], c.exam1) + perfContributionAtBoundary(key, perfCutoffs, c)
+    );
+  }
+
+  return result;
+}
+
+export function computeContributions(exam1, exam2, perfCutoffs, config, mode, key) {
+  const c = normalizeComponentConfig(config);
+  const areas = normalizePerfCutoffs(perfCutoffs);
+  const perfByArea = c.perfAreas.map((area, i) =>
+    areas[i] && areas[i][key] != null ? contribute(areas[i][key], area) : 0
+  );
+  const perfTotal = round1(perfByArea.reduce((s, v) => s + v, 0));
+
   return {
-    exam1: contribute(exam1[key], config.exam1),
-    exam2: contribute(exam2[key], config.exam2),
-    perf: contribute(perf[key], config.perf),
+    exam1: contribute(exam1[key], c.exam1),
+    exam2: contribute(exam2[key], c.exam2),
+    perfByArea,
+    perf: perfTotal,
   };
 }
 
-export function solveExam2Cutoffs(finalTarget, exam1, perf, config, mode) {
+export function solveExam2Cutoffs(finalTarget, exam1, perfCutoffs, config, mode) {
   const keys = getBoundaryKeys(mode);
-  const { exam2: c2 } = config;
-  const result = {};
+  const c = normalizeComponentConfig(config);
+  const { exam2: c2 } = c;
+  const rawValues = {};
   const issues = [];
 
   if (c2.weight === 0) {
@@ -58,66 +159,108 @@ export function solveExam2Cutoffs(finalTarget, exam1, perf, config, mode) {
   }
 
   for (const key of keys) {
-    const other =
-      contribute(exam1[key], config.exam1) + contribute(perf[key], config.perf);
+    const other = contribute(exam1[key], c.exam1) + perfContributionAtBoundary(key, perfCutoffs, c);
     const raw = ((finalTarget[key] - other) * c2.max) / c2.weight;
-    result[key] = snapScore5(raw, c2.max);
+    rawValues[key] = raw;
 
-    if (result[key] < 0 || result[key] > c2.max) {
+    if (raw < 0) {
       issues.push(
-        `${key} 경계: 역산값 ${result[key]}이(가) 0~${c2.max} 범위를 벗어납니다.`
+        `목표 최종 ${BOUNDARY_LABELS[key]}(${finalTarget[key]})는 정기1+수행 환산점 합이 이미 ${round1(other)}점입니다. 목표를 올리거나 확정 분할점수를 낮춰 주세요.`
+      );
+    } else if (raw > c2.max) {
+      issues.push(
+        `목표 최종 ${BOUNDARY_LABELS[key]}(${finalTarget[key]})는 정기2 만점(${c2.max})을 초과하는 역산값(${round1(raw)})입니다. 목표를 낮추거나 확정 분할점수를 조정해 주세요.`
       );
     }
   }
 
-  const monoIssues = validateCutoffs(result, mode, c2.max);
-  issues.push(...monoIssues);
+  if (issues.length) {
+    return { cutoffs: null, issues, rawValues };
+  }
 
-  return { cutoffs: result, issues };
+  const result = snapCutoffsMonotonic(rawValues, mode, c2.max);
+  const monoIssues = validateCutoffs(result, mode, c2.max);
+
+  if (monoIssues.length) {
+    issues.push(
+      "정기2 분할점수는 5점 단위로 설정됩니다. 목표 비율을 조정해 A/B·B/C 등 경계 간격이 5점 이상 벌어지도록 해 주세요."
+    );
+    issues.push(...monoIssues);
+    return { cutoffs: null, issues, rawValues };
+  }
+
+  return { cutoffs: result, issues: [], rawValues };
 }
 
-export function computeWeightedScore(exam1, exam2, perf, config) {
+export function computeWeightedScore(exam1, exam2, perfScores, config) {
+  const c = normalizeComponentConfig(config);
   return roundInt(
-    contribute(exam1, config.exam1) +
-      contribute(exam2, config.exam2) +
-      contribute(perf, config.perf)
+    contribute(exam1, c.exam1) +
+      contribute(exam2, c.exam2) +
+      studentPerfContribution(perfScores, c)
   );
 }
 
 export function validateComponentConfig(config) {
   const issues = [];
-  const labels = { exam1: "정기시험1", exam2: "정기시험2", perf: "수행평가" };
+  const c = normalizeComponentConfig(config);
+  const labels = { exam1: "정기시험1", exam2: "정기시험2" };
 
   for (const [key, label] of Object.entries(labels)) {
-    const c = config[key];
-    if (!c || !Number.isFinite(c.weight) || c.weight < 0) {
+    const comp = c[key];
+    if (!comp || !Number.isFinite(comp.weight) || comp.weight < 0) {
       issues.push(`${label} 반영 비율이 올바르지 않습니다.`);
     }
-    if (!c || !Number.isFinite(c.max) || c.max <= 0) {
+    if (!comp || !Number.isFinite(comp.max) || comp.max <= 0) {
       issues.push(`${label} 만점은 0보다 커야 합니다.`);
     }
   }
 
+  if (!c.perfAreas.length) {
+    issues.push("수행평가 영역이 하나 이상 필요합니다.");
+  }
+
+  c.perfAreas.forEach((area, i) => {
+    const label = c.perfAreas.length > 1 ? `수행평가 ${i + 1}` : "수행평가";
+    if (!Number.isFinite(area.weight) || area.weight < 0) {
+      issues.push(`${label} 반영 비율이 올바르지 않습니다.`);
+    }
+    if (!Number.isFinite(area.max) || area.max <= 0) {
+      issues.push(`${label} 만점은 0보다 커야 합니다.`);
+    }
+  });
+
   if (issues.length) return issues;
 
-  const sum = round1(config.exam1.weight + config.exam2.weight + config.perf.weight);
+  const sum = round1(c.exam1.weight + c.exam2.weight + perfWeightSum(c));
   if (Math.abs(sum - 100) >= 0.05) {
     issues.push(`반영 비율 합이 ${sum}%입니다. 합이 100%가 되도록 조정해 주세요.`);
   }
 
-  if (config.exam2.weight === 0) {
+  if (c.exam2.weight === 0) {
     issues.push("정기시험2 반영 비율이 0%이면 정기시험2 초안 도우미 기능을 사용할 수 없습니다.");
   }
 
   return issues;
 }
 
-export function validateCombineInputs(exam1, exam2, perf, config, mode) {
+export function validateCombineInputs(exam1, exam2, perfCutoffs, config, mode) {
+  const c = normalizeComponentConfig(config);
+  const areas = normalizePerfCutoffs(perfCutoffs);
+  const perfIssues = [];
+
+  for (let i = 0; i < c.perfAreas.length; i++) {
+    const label = c.perfAreas.length > 1 ? `수행평가 ${i + 1}` : "수행평가";
+    perfIssues.push(
+      ...validateCutoffs(areas[i] || {}, mode, c.perfAreas[i].max).map((m) => `${label}: ${m}`)
+    );
+  }
+
   return [
-    ...validateComponentConfig(config),
-    ...validateCutoffs(exam1, mode, config.exam1.max).map((m) => `정기시험1: ${m}`),
-    ...validateCutoffs(exam2, mode, config.exam2.max).map((m) => `정기시험2: ${m}`),
-    ...validateCutoffs(perf, mode, config.perf.max).map((m) => `수행평가: ${m}`),
+    ...validateComponentConfig(c),
+    ...validateCutoffs(exam1, mode, c.exam1.max).map((m) => `정기시험1: ${m}`),
+    ...validateCutoffs(exam2, mode, c.exam2.max).map((m) => `정기시험2: ${m}`),
+    ...perfIssues,
   ];
 }
 
@@ -131,11 +274,18 @@ export function compareFinals(before, after, mode) {
   }));
 }
 
-// Legacy alias for weight-only access
 export function configToWeights(config) {
+  const c = normalizeComponentConfig(config);
   return {
-    exam1: config.exam1.weight,
-    exam2: config.exam2.weight,
-    perf: config.perf.weight,
+    exam1: c.exam1.weight,
+    exam2: c.exam2.weight,
+    perf: perfWeightSum(c),
   };
+}
+
+/** @deprecated use perfAreas — kept for display helpers */
+export function configPerfLegacy(config) {
+  const c = normalizeComponentConfig(config);
+  const w = perfWeightSum(c);
+  return { weight: w, max: w };
 }

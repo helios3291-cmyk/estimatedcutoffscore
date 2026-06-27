@@ -1,0 +1,10 @@
+{
+  "name": "estimatedcutoffscore",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node test-core.mjs && node test-robustness.mjs",
+    "test:core": "node test-core.mjs",
+    "test:robust": "node test-robustness.mjs"
+  }
+}
