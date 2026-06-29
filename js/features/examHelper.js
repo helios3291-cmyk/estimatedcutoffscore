@@ -557,7 +557,7 @@ export function initExamHelper(app) {
       alert("먼저 통과율 제안 계산을 실행해 주세요.");
       return;
     }
-    pushExamCutoffToSession(exam, computed);
+    pushExamCutoffToSession(exam, computed, exam === "mid2" ? "helper" : null);
     applyExamCutoffsToBasic(exam, computed, app);
     alert(`${EXAM_LABELS[exam]} 추정 분할점수(소수 둘째 자리)가 기본 탭에 적용되었습니다.`);
     app.switchTab?.("basic");

@@ -129,13 +129,19 @@ export function loadAppState() {
   }
 }
 
-export function pushExamCutoffToSession(exam, cutoffs) {
-  sessionStorage.setItem(`exam_cutoff_${exam}`, JSON.stringify(cutoffs));
+export function examCutoffSessionKey(exam, source = null) {
+  if (exam === "mid2" && source === "helper") return "exam_cutoff_mid2_helper";
+  if (exam === "mid2" && source === "semester") return "exam_cutoff_mid2_semester";
+  return `exam_cutoff_${exam}`;
 }
 
-export function pullExamCutoffFromSession(exam) {
+export function pushExamCutoffToSession(exam, cutoffs, source = null) {
+  sessionStorage.setItem(examCutoffSessionKey(exam, source), JSON.stringify(cutoffs));
+}
+
+export function pullExamCutoffFromSession(exam, source = null) {
   try {
-    const raw = sessionStorage.getItem(`exam_cutoff_${exam}`);
+    const raw = sessionStorage.getItem(examCutoffSessionKey(exam, source));
     return raw ? JSON.parse(raw) : null;
   } catch {
     return null;

@@ -481,7 +481,7 @@ export function initExam2Tuner(app) {
       alert("먼저 정기시험2 추정분할점수 초안을 산출해 주세요.");
       return;
     }
-    pushExamCutoffToSession("mid2", cutoffs);
+    pushExamCutoffToSession("mid2", cutoffs, "semester");
     applyExamCutoffsToBasic("mid2", cutoffs, app);
     alert("정기시험2 추정분할점수 초안이 기본 탭에 적용되었습니다.");
     app.switchTab?.("basic");
