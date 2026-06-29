@@ -79,7 +79,7 @@ export function initStudentPredict(app) {
 
     <section class="card">
       <h2>최종 분할점수 (판정 기준)</h2>
-      <p class="notice">기본 산출 탭에서 「최종 분할점수 산출」 시 아래 값이 자동 반영됩니다 (정수).</p>
+      <p class="notice">기본 탭에서 「최종 분할점수 산출」 시 아래 값이 자동 반영됩니다 (정수).</p>
       <div id="student-cutoffs" class="boundaries-grid"></div>
       <button type="button" id="calc-student" class="primary-btn">성취도 예측</button>
       <p id="student-error" class="error-msg" hidden></p>
@@ -151,7 +151,7 @@ export function initStudentPredict(app) {
     const resultEl = document.getElementById("student-result");
 
     if (!app.finalCutoffs) {
-      errEl.textContent = "기본 산출 탭에서 최종 분할점수를 먼저 산출해 주세요.";
+      errEl.textContent = "기본 탭에서 최종 분할점수를 먼저 산출해 주세요.";
       errEl.hidden = false;
       resultEl.hidden = true;
       return;

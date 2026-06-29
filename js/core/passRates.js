@@ -9,6 +9,7 @@ import {
   gradeColumnsForMode,
   passRateGradeColumnsForMode,
   boundaryForPassRateGrade,
+  passRateTargetScore,
   TIER_LABELS_KO,
   GRADE_MODE_SIX,
   GRADE_MODE_FIVE,
@@ -17,6 +18,107 @@ import {
 } from "./grades.js";
 
 const GRADE_MONOTONIC_GAP = 5;
+
+export const ABILITY_GAP_LIMITS = [20, 25, 30];
+export const ABILITY_GAP_WARN_THRESHOLD = 20;
+
+function cloneMatrix(matrix) {
+  const next = {};
+  for (const [grade, tiers] of Object.entries(matrix || {})) {
+    next[grade] = { ...(tiers || {}) };
+  }
+  return next;
+}
+
+/** 같은 난이도에서 A(상위) − E(하위) 통과율 격차 */
+export function abilityGapForTier(matrix, tier, gradeCols) {
+  const top = gradeCols[0];
+  const bottom = gradeCols[gradeCols.length - 1];
+  return (matrix[top]?.[tier] ?? 0) - (matrix[bottom]?.[tier] ?? 0);
+}
+
+function compressTierGradeSpread(tierRates, gradeCols, maxGap) {
+  const n = gradeCols.length;
+  const cap = Math.max(maxGap, (n - 1) * GRADE_MONOTONIC_GAP);
+  const bottom = gradeCols[n - 1];
+
+  const bottomVal = snapRatePercent(tierRates[bottom] ?? MIN_PASS_RATE_PERCENT);
+  const topVal = snapRatePercent(Math.min(tierRates[gradeCols[0]] ?? 100, bottomVal + cap));
+
+  const out = {};
+  out[bottom] = bottomVal;
+  for (let i = n - 2; i >= 0; i--) {
+    const grade = gradeCols[i];
+    const nextGrade = gradeCols[i + 1];
+    out[grade] = snapRatePercent(Math.min(topVal, out[nextGrade] + GRADE_MONOTONIC_GAP));
+  }
+
+  return out;
+}
+
+export function enforceAbilityGapMatrix(matrix, mode, maxGap) {
+  const cols = passRateGradeColumnsForMode(mode);
+  const next = cloneMatrix(matrix);
+
+  for (const tier of TIER_ORDER) {
+    const tierRates = {};
+    for (const g of cols) {
+      tierRates[g] = next[g]?.[tier] ?? MIN_PASS_RATE_PERCENT;
+    }
+    const fixed = compressTierGradeSpread(tierRates, cols, maxGap);
+    for (const g of cols) {
+      if (!next[g]) next[g] = {};
+      next[g][tier] = fixed[g];
+    }
+  }
+
+  return next;
+}
+
+export function matrixMatchesCutoffs(tierRows, matrix, cutoffs, mode, tolerance = 0.05) {
+  const expected = expectedScoresByGrade(tierRows, matrix, mode);
+  const grades = passRateGradeColumnsForMode(mode);
+
+  for (const grade of grades) {
+    const target = passRateTargetScore(grade, cutoffs, mode);
+    if (target == null) continue;
+    if (Math.abs((expected[grade] ?? 0) - target) >= tolerance) return false;
+  }
+
+  return true;
+}
+
+export function applyAbilityGapWithCutoffs(matrix, tierRows, cutoffs, mode) {
+  const limits = ABILITY_GAP_LIMITS;
+  let fallback = cloneMatrix(matrix);
+
+  for (const maxGap of limits) {
+    let candidate = cloneMatrix(matrix);
+    for (let pass = 0; pass < 3; pass++) {
+      candidate = enforceTierMonotonicMatrix(candidate, mode);
+      candidate = enforceGradeMonotonicMatrix(candidate, mode);
+    }
+    candidate = enforceAbilityGapMatrix(candidate, mode, maxGap);
+    candidate = enforceTierMonotonicMatrix(candidate, mode);
+    fallback = candidate;
+    if (matrixMatchesCutoffs(tierRows, candidate, cutoffs, mode)) {
+      return { matrix: candidate, maxGapUsed: maxGap, matched: true };
+    }
+  }
+
+  return { matrix: fallback, maxGapUsed: limits[limits.length - 1], matched: false };
+}
+
+export function tiersExceedingAbilityGap(matrix, mode, threshold = ABILITY_GAP_WARN_THRESHOLD) {
+  const cols = passRateGradeColumnsForMode(mode);
+  const violations = [];
+  for (const tier of TIER_ORDER) {
+    if (abilityGapForTier(matrix, tier, cols) > threshold) {
+      violations.push(tier);
+    }
+  }
+  return violations;
+}
 
 const BOUNDARY_TO_PASS_GRADE = {
   AB: "A",

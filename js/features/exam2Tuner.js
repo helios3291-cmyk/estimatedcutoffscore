@@ -105,7 +105,7 @@ export function initExam2Tuner(app) {
   root.innerHTML = `
     <section class="card">
       <h2>학생 성적 데이터 입력</h2>
-      <p class="notice">엑셀에서 시트 범위를 <strong>복사·붙여넣기</strong>(탭/쉼표 구분). <strong>반×번호 행렬</strong>(모서리 <code>반/번호</code>, 열=1·2·3… 또는 1반·2반…, 행=번호, 셀=학생 총점) 또는 <strong>문항별 행</strong>(첫 열=번호, 이후 열=문항 점수 합산) 형식을 지원합니다. 미인정결·질병결·자퇴 등은 해당 학생만 비율 계산에서 제외됩니다. 수행평가 영역 수는 <strong>기본 산출 탭</strong> 설정을 따릅니다.</p>
+      <p class="notice">엑셀에서 시트 범위를 <strong>복사·붙여넣기</strong>(탭/쉼표 구분). <strong>반×번호 행렬</strong>(모서리 <code>반/번호</code>, 열=1·2·3… 또는 1반·2반…, 행=번호, 셀=학생 총점) 또는 <strong>문항별 행</strong>(첫 열=번호, 이후 열=문항 점수 합산) 형식을 지원합니다. 미인정결·질병결·자퇴 등은 해당 학생만 비율 계산에서 제외됩니다. 수행평가 영역 수는 <strong>기본 탭</strong> 설정을 따릅니다.</p>
       <div>
         <h3 class="sub-heading">정기시험1</h3>
         <textarea id="sf-exam1-paste" class="paste-area" rows="6" placeholder="엑셀에서 복사한 범위를 붙여 넣으세요"></textarea>
@@ -250,6 +250,7 @@ export function initExam2Tuner(app) {
     );
 
     app.persist?.();
+    app.notifyStateChange?.();
   }
 
   function getAlignedScores() {
@@ -482,7 +483,7 @@ export function initExam2Tuner(app) {
     }
     pushExamCutoffToSession("mid2", cutoffs);
     applyExamCutoffsToBasic("mid2", cutoffs, app);
-    alert("정기시험2 추정분할점수 초안이 기본 산출 탭에 적용되었습니다.");
+    alert("정기시험2 추정분할점수 초안이 기본 탭에 적용되었습니다.");
     app.switchTab?.("basic");
   });
 

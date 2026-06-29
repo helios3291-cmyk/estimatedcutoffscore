@@ -26,6 +26,9 @@ import {
   validateTierMonotonicMatrix,
   validateGradeMonotonicMatrix,
   computeExamCutoffsFromPassMatrix,
+  applyAbilityGapWithCutoffs,
+  abilityGapForTier,
+  ABILITY_GAP_WARN_THRESHOLD,
 } from "../core/passRates.js";
 import {
   buildExamHelperExcelRows,
@@ -281,14 +284,23 @@ export function initExamHelper(app) {
     return readPoints();
   }
 
-  function renderPassRateTable(passRates, points, cutoffs) {
+  function renderPassRateTable(passRates, points, cutoffs, options = {}) {
     const gradeCols = passRateGradeColumnsForMode(app.gradeMode);
     let matrix = passRatesToMatrix(passRates, app.gradeMode);
     matrix = enrichMatrixForFiveMode(matrix, cutoffs, points);
 
-    app.helperState.passRateMatrix = matrix;
     app.helperState.tierRows = getTierRows();
     const tierRows = app.helperState.tierRows;
+
+    if (options.applyAbilityGap !== false) {
+      const gapResult = applyAbilityGapWithCutoffs(matrix, tierRows, cutoffs, app.gradeMode);
+      matrix = gapResult.matrix;
+      app.helperState.abilityGapUsed = gapResult.maxGapUsed;
+      app.helperState.abilityGapMatched = gapResult.matched;
+    }
+
+    app.helperState.passRateMatrix = matrix;
+    app.helperState.passRates = matrixToPassRates(matrix, app.gradeMode);
 
     const headerSpan = document.getElementById("rate-header-span");
     headerSpan.colSpan = gradeCols.length;
@@ -341,12 +353,10 @@ export function initExamHelper(app) {
     });
 
     for (const tier of TIER_ORDER) {
-      for (let i = 1; i < gradeCols.length; i++) {
-        const upper = gradeCols[i - 1];
-        const grade = gradeCols[i];
-        const upperRate = matrix[upper]?.[tier] ?? 0;
-        const rate = matrix[grade]?.[tier] ?? 0;
-        if (upperRate - rate >= 20) {
+      if (abilityGapForTier(matrix, tier, gradeCols) > ABILITY_GAP_WARN_THRESHOLD) {
+        const top = gradeCols[0];
+        const bottom = gradeCols[gradeCols.length - 1];
+        for (const grade of [top, bottom]) {
           const input = document.querySelector(
             `.rate-cell-input[data-tier="${tier}"][data-grade="${grade}"]`
           );
@@ -549,7 +559,7 @@ export function initExamHelper(app) {
     }
     pushExamCutoffToSession(exam, computed);
     applyExamCutoffsToBasic(exam, computed, app);
-    alert(`${EXAM_LABELS[exam]} 추정 분할점수(소수 둘째 자리)가 기본 산출 탭에 적용되었습니다.`);
+    alert(`${EXAM_LABELS[exam]} 추정 분할점수(소수 둘째 자리)가 기본 탭에 적용되었습니다.`);
     app.switchTab?.("basic");
   });
 
@@ -586,8 +596,20 @@ export function initExamHelper(app) {
     if (app.helperState.questions?.length) renderQuestions();
     updatePointsSum();
   }
+
+  app.focusExamHelper = (examKey) => focusExamHelper(app, examKey);
 }
 
 export function getHelperStateForSave(app) {
   return app.helperState || null;
+}
+
+/** 기본 탭 바로가기 — 대상 시험 선택 후 exam-helper 탭으로 이동 */
+export function focusExamHelper(app, examKey) {
+  const select = document.getElementById("helper-exam");
+  const exam = examKey === "mid2" ? "mid2" : "mid1";
+  if (select) select.value = exam;
+  app.helperState = app.helperState || {};
+  app.helperState.exam = exam;
+  app.persist?.();
 }

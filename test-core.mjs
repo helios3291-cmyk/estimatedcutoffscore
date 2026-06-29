@@ -12,7 +12,13 @@ import {
   passRatesToMatrix,
   validateTierMonotonicMatrix,
   validateGradeMonotonicMatrix,
+  applyAbilityGapWithCutoffs,
+  abilityGapForTier,
+  enforceAbilityGapMatrix,
+  buildTierRowsBasic,
+  matrixMatchesCutoffs,
 } from "./js/core/passRates.js";
+import { getAppReadiness } from "./js/core/readiness.js";
 import { parsePasteText, alignStudentsById } from "./js/core/studentData.js";
 import {
   computeGradeDistribution,
@@ -28,6 +34,7 @@ import {
   snapCutoffsMonotonic,
   normalizeFinalCutoffs,
   MIN_PASS_RATE_PERCENT,
+  passRateGradeColumnsForMode,
 } from "./js/core/grades.js";
 
 const config = defaultComponentConfig();
@@ -280,5 +287,51 @@ console.assert(
   validateGradeMonotonicMatrix(detailMatrix, GRADE_MODE_FIVE).length === 0,
   "detail 30/35/35 matrix grade monotonic"
 );
+
+const gapCols = passRateGradeColumnsForMode(GRADE_MODE_FIVE);
+const gapCutoffs = { AB: 85, BC: 70, CD: 55, DE: 40 };
+const gapTierRows = buildTierRowsBasic(points);
+const gapBaseMatrix = passRatesToMatrix(
+  solvePassRatesForCutoffs(gapCutoffs, points, GRADE_MODE_FIVE),
+  GRADE_MODE_FIVE
+);
+const gapResult = applyAbilityGapWithCutoffs(
+  gapBaseMatrix,
+  gapTierRows,
+  gapCutoffs,
+  GRADE_MODE_FIVE
+);
+for (const tier of ["하", "중", "상"]) {
+  const gap = abilityGapForTier(gapResult.matrix, tier, gapCols);
+  console.assert(
+    gap <= gapResult.maxGapUsed + 0.01,
+    `ability gap ${tier} should be <= ${gapResult.maxGapUsed} got ${gap}`
+  );
+}
+console.assert(gapResult.maxGapUsed <= 30, "ability gap limit should not exceed 30");
+if (gapResult.matched) {
+  console.assert(
+    matrixMatchesCutoffs(gapTierRows, gapResult.matrix, gapCutoffs, GRADE_MODE_FIVE),
+    "ability gap result should match cutoffs when matched"
+  );
+}
+
+const capped20 = enforceAbilityGapMatrix(gapBaseMatrix, GRADE_MODE_FIVE, 20);
+for (const tier of ["하", "중", "상"]) {
+  console.assert(
+    abilityGapForTier(capped20, tier, gapCols) <= 20,
+    `enforce 20: tier ${tier} A-E gap`
+  );
+}
+
+const readinessEmpty = getAppReadiness({});
+console.assert(readinessEmpty.length === 2, "readiness has two chips");
+console.assert(readinessEmpty[0].id === "final", "first chip is final");
+console.assert(readinessEmpty[1].status === "pending", "no student data pending");
+
+const readinessPartial = getAppReadiness({
+  semesterState: { exam1Students: [{ total: 80, excluded: false }] },
+});
+console.assert(readinessPartial[1].status === "partial", "exam1 only is partial");
 
 console.log("All core tests passed.");

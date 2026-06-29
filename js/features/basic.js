@@ -213,6 +213,11 @@ export function initBasic(app) {
           <h2>정기시험1 분할점수</h2>
           <button type="button" class="secondary-btn small-btn" id="load-exam1-session">도우미 결과 불러오기</button>
         </div>
+        <p class="notice exam-source-notice">
+          산출 결과를 직접 입력하시거나,
+          <button type="button" class="link-btn tab-shortcut" data-tab="exam-helper" data-exam="mid1">정기시험별 추정분할점수 산출</button>
+          탭을 활용하세요.
+        </p>
         <p class="component-max-hint" id="hint-exam1">만점 100점 척도</p>
         <div id="exam1-boundaries" class="boundaries-grid"></div>
       </section>
@@ -221,6 +226,11 @@ export function initBasic(app) {
           <h2>정기시험2 분할점수</h2>
           <button type="button" class="secondary-btn small-btn" id="load-exam2-session">도우미/학생 성적 결과 불러오기</button>
         </div>
+        <p class="notice exam-source-notice">
+          산출 결과를 직접 입력하시거나,
+          <button type="button" class="link-btn tab-shortcut" data-tab="exam-helper" data-exam="mid2">정기시험별 추정분할점수 산출</button>
+          탭을 활용하세요.
+        </p>
         <p class="component-max-hint" id="hint-exam2">만점 100점 척도</p>
         <div id="exam2-boundaries" class="boundaries-grid"></div>
       </section>
@@ -341,6 +351,14 @@ export function initBasic(app) {
   document.getElementById("export-basic-excel").addEventListener("click", () => exportBasic(app));
   document.getElementById("load-exam1-session").addEventListener("click", () => loadSession("mid1", "e1", app));
   document.getElementById("load-exam2-session").addEventListener("click", () => loadSession("mid2", "e2", app));
+
+  root.querySelectorAll(".tab-shortcut").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const exam = btn.dataset.exam || "mid1";
+      app.focusExamHelper?.(exam);
+      app.switchTab?.(btn.dataset.tab || "exam-helper");
+    });
+  });
 
   bindConfigInputs(app, onPerfCountChange);
   updateWeightStatus();
@@ -537,7 +555,7 @@ function exportBasic(app) {
 function loadSession(exam, prefix, app) {
   const cutoffs = pullExamCutoffFromSession(exam);
   if (!cutoffs) {
-    alert("저장된 결과가 없습니다. 정기시험 추정분할점수 산출 도우미 또는 학생 성적 데이터 기반 도우미에서 먼저 적용해 주세요.");
+    alert("저장된 결과가 없습니다. 정기시험별 추정분할점수 산출 또는 학생 성적 분석 및 최종추정분할점수 초안 산출 탭에서 먼저 적용해 주세요.");
     return;
   }
   writeComponentCutoffs(prefix, cutoffs, app.gradeMode);
@@ -638,7 +656,7 @@ export function syncSemesterCutoffsFromBasic(app) {
   const pf = getPerfCutoffsForApp(app);
 
   if (!e1 || e1.AB == null) {
-    return { ok: false, error: "기본 산출 탭에서 정기1 분할점수를 입력해 주세요." };
+    return { ok: false, error: "기본 탭에서 정기1 분할점수를 입력해 주세요." };
   }
 
   app.semesterState = app.semesterState || {};
