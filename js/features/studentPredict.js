@@ -6,9 +6,48 @@ import {
   alignStudentsForSemesterPrediction,
   splitStudentId,
   validStudentTotals,
+  parsePasteText,
+  summarizeStudentData,
+  buildExam1PasteExample,
 } from "../core/studentData.js";
 import { gradeListForMode } from "../core/gradeDistribution.js";
 import { exportToExcel, buildCohortExcelRows } from "../io/export.js";
+import { getPasteGridText, initPasteGridElement, setPasteGridText } from "../ui/pasteGrid.js";
+
+function initExam2ActualPasteGrid(app) {
+  const host = document.getElementById("sf-exam2-actual-paste");
+  if (!host) return;
+  initPasteGridElement(host, {
+    initialText: app.semesterState?.exam2ActualPaste || "",
+  });
+}
+
+function parseExam2ActualData(app) {
+  const errEl = document.getElementById("sp-exam2-parse-error");
+  if (errEl) errEl.hidden = true;
+
+  const parsed = parsePasteText(getPasteGridText("sf-exam2-actual-paste"));
+
+  if (parsed.issues?.length && errEl) {
+    errEl.textContent = parsed.issues[0];
+    errEl.hidden = false;
+  }
+
+  app.semesterState = app.semesterState || {};
+  app.semesterState.exam2ActualStudents = parsed.students;
+  app.semesterState.exam2ActualPaste = getPasteGridText("sf-exam2-actual-paste");
+
+  const stats = summarizeStudentData(parsed.students);
+  const statsEl = document.getElementById("sf-exam2-actual-stats");
+  if (statsEl) {
+    statsEl.textContent = stats
+      ? `유효 ${stats.count}명 (제외 ${stats.excluded}명) · ${parsed.layout === "matrix" ? "반×번호 행렬" : "문항별"} · 평균 ${stats.mean} · 표준편차 ${stats.std}`
+      : "유효 데이터 없음";
+  }
+
+  app.persist?.();
+  app.notifyStateChange?.();
+}
 
 function renderPerfScoreInputs(app) {
   const config = getConfigForApp(app);
@@ -60,7 +99,7 @@ function fillCutoffInputs(cutoffs, mode) {
   return normalized;
 }
 
-/** 1. 기본 탭의 학기말 분할점수 → 학생 예측 입력란 동기화 */
+/** 1. 기본 탭의 학기말 분할점수 → 학기말 성적 분석 입력란 동기화 */
 export function syncFinalCutoffsFromBasic(app) {
   if (!app.finalCutoffs) return false;
   const normalized = fillCutoffInputs(app.finalCutoffs, app.gradeMode);
@@ -111,8 +150,20 @@ export function initStudentPredict(app) {
     </section>
 
     <section class="card">
+      <h2>실제 정기시험2 학생 데이터</h2>
+      <p class="notice">3. 학생 성적 기반 정기시험2 준비 탭의 정기1·수행과 <strong>동일한 반×번호 헤더·행·열 구조</strong>로 입력하세요. 아래 「학급 학기말 성적 예측」에 사용됩니다.</p>
+      <div class="paste-toolbar">
+        <button type="button" class="secondary-btn small-btn" id="sf-exam2-actual-example">예시 데이터 채우기</button>
+      </div>
+      <div id="sf-exam2-actual-paste" class="paste-grid-host" data-paste-grid></div>
+      <p id="sf-exam2-actual-stats" class="component-max-hint"></p>
+      <button type="button" id="sp-parse-exam2-actual" class="primary-btn">데이터 반영</button>
+      <p id="sp-exam2-parse-error" class="error-msg" hidden></p>
+    </section>
+
+    <section class="card">
       <h2>학급 학기말 성적 예측</h2>
-      <p class="notice">전제: 1. 기본 탭에서 「학기말 분할점수 산출」 완료, 3. 실제 학생 성적 기반 정기시험2 추정 준비 탭에서 정기1·수행·<strong>실제 정기2</strong> 데이터 「데이터 반영」 완료.</p>
+      <p class="notice">전제: 1. 기본 탭에서 「학기말 분할점수 산출」 완료, 3번 탭에서 정기1·수행 「데이터 반영」 완료, 이 탭에서 <strong>정기2</strong> 「데이터 반영」 완료.</p>
       <button type="button" id="calc-cohort" class="primary-btn">학기말 성적 예측</button>
       <p id="cohort-error" class="error-msg" hidden></p>
     </section>
@@ -284,7 +335,7 @@ export function initStudentPredict(app) {
       return;
     }
     if (!validStudentTotals(exam2).length) {
-      errEl.textContent = "3번 탭 하단 실제 정기2 학생 데이터를 반영해 주세요.";
+      errEl.textContent = "이 탭에서 정기2 학생 데이터를 「데이터 반영」해 주세요.";
       errEl.hidden = false;
       resultEl.hidden = true;
       return;
@@ -344,6 +395,29 @@ export function initStudentPredict(app) {
   }
 
   document.getElementById("calc-cohort").addEventListener("click", calculateCohort);
+
+  document.getElementById("sp-parse-exam2-actual").addEventListener("click", () =>
+    parseExam2ActualData(app)
+  );
+
+  const exam2ExampleBtn = document.getElementById("sf-exam2-actual-example");
+  if (exam2ExampleBtn) {
+    exam2ExampleBtn.addEventListener("click", () => {
+      setPasteGridText("sf-exam2-actual-paste", buildExam1PasteExample());
+      document.getElementById("sf-exam2-actual-paste")?._pasteGrid?.focus();
+    });
+  }
+
+  initExam2ActualPasteGrid(app);
+
+  const existingExam2 = app.semesterState?.exam2ActualStudents;
+  if (existingExam2?.length) {
+    const stats = summarizeStudentData(existingExam2);
+    const statsEl = document.getElementById("sf-exam2-actual-stats");
+    if (statsEl && stats) {
+      statsEl.textContent = `유효 ${stats.count}명 (제외 ${stats.excluded}명) · 평균 ${stats.mean} · 표준편차 ${stats.std}`;
+    }
+  }
 
   document.getElementById("cohort-export").addEventListener("click", () => {
     if (!lastCohortResult?.rows?.length) return;

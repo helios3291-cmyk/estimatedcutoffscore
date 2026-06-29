@@ -101,9 +101,7 @@ function renderPerfInputSections(app) {
 
 function fillPasteExample(targetId) {
   const text =
-    targetId === "sf-exam1-paste" || targetId === "sf-exam2-actual-paste"
-      ? buildExam1PasteExample()
-      : buildPerfPasteExample();
+    targetId === "sf-exam1-paste" ? buildExam1PasteExample() : buildPerfPasteExample();
   setPasteGridText(targetId, text);
   document.getElementById(targetId)?._pasteGrid?.focus();
 }
@@ -115,13 +113,6 @@ function initAllPasteGrids(app) {
   const examHost = document.getElementById("sf-exam1-paste");
   if (examHost) {
     initPasteGridElement(examHost, { initialText: app.semesterState.exam1Paste || "" });
-  }
-
-  const exam2Host = document.getElementById("sf-exam2-actual-paste");
-  if (exam2Host) {
-    initPasteGridElement(exam2Host, {
-      initialText: app.semesterState.exam2ActualPaste || "",
-    });
   }
 
   for (let i = 0; i < count; i++) {
@@ -146,12 +137,6 @@ function bindPasteExampleButtons() {
   if (examBtn && !examBtn.dataset.bound) {
     examBtn.dataset.bound = "1";
     examBtn.addEventListener("click", () => fillPasteExample("sf-exam1-paste"));
-  }
-
-  const exam2Btn = document.getElementById("sf-exam2-actual-example");
-  if (exam2Btn && !exam2Btn.dataset.bound) {
-    exam2Btn.dataset.bound = "1";
-    exam2Btn.addEventListener("click", () => fillPasteExample("sf-exam2-actual-paste"));
   }
 }
 
@@ -235,16 +220,6 @@ export function initExam2Tuner(app) {
       </div>
       <div id="sf-achieved-wrap"></div>
     </section>
-
-    <section class="card">
-      <h2>실제 정기시험2 학생 데이터</h2>
-      <p class="notice">정기1·수행과 <strong>동일한 반×번호 헤더·행·열 구조</strong>로 입력하세요. 4. 학생 예측 탭의 <strong>학급 학기말 성적 예측</strong>에 사용됩니다.</p>
-      <div class="paste-toolbar">
-        <button type="button" class="secondary-btn small-btn" id="sf-exam2-actual-example">예시 데이터 채우기</button>
-      </div>
-      <div id="sf-exam2-actual-paste" class="paste-grid-host" data-paste-grid></div>
-      <p id="sf-exam2-actual-stats" class="component-max-hint"></p>
-    </section>
   `;
 
   app.semesterState = app.semesterState || {
@@ -294,7 +269,6 @@ export function initExam2Tuner(app) {
     const count = config.perfCount || 1;
 
     const exam1Parsed = parsePasteText(getPasteGridText("sf-exam1-paste"));
-    const exam2ActualParsed = parsePasteText(getPasteGridText("sf-exam2-actual-paste"));
     const perfParsedList = [];
 
     for (let i = 0; i < count; i++) {
@@ -302,9 +276,6 @@ export function initExam2Tuner(app) {
     }
 
     const issues = [...(exam1Parsed.issues || [])];
-    if (exam2ActualParsed.issues?.length) {
-      issues.push(`실제 정기2: ${exam2ActualParsed.issues[0]}`);
-    }
     perfParsedList.forEach((p, i) => {
       if (p.issues?.length) issues.push(`수행${count > 1 ? i + 1 : ""}: ${p.issues[0]}`);
     });
@@ -315,21 +286,12 @@ export function initExam2Tuner(app) {
     }
 
     app.semesterState.exam1Students = exam1Parsed.students;
-    app.semesterState.exam2ActualStudents = exam2ActualParsed.students;
     app.semesterState.perfStudentsByArea = perfParsedList.map((p) => p.students);
 
     const s1 = summarizeStudentData(exam1Parsed.students);
     document.getElementById("sf-exam1-stats").textContent = s1
       ? `유효 ${s1.count}명 (제외 ${s1.excluded}명) · ${exam1Parsed.layout === "matrix" ? "반×번호 행렬" : "문항별"} · 평균 ${s1.mean} · 표준편차 ${s1.std}`
       : "유효 데이터 없음";
-
-    const s2a = summarizeStudentData(exam2ActualParsed.students);
-    const exam2StatsEl = document.getElementById("sf-exam2-actual-stats");
-    if (exam2StatsEl) {
-      exam2StatsEl.textContent = s2a
-        ? `유효 ${s2a.count}명 (제외 ${s2a.excluded}명) · ${exam2ActualParsed.layout === "matrix" ? "반×번호 행렬" : "문항별"} · 평균 ${s2a.mean} · 표준편차 ${s2a.std}`
-        : "유효 데이터 없음";
-    }
 
     for (let i = 0; i < count; i++) {
       const s2 = summarizeStudentData(perfParsedList[i].students);
@@ -361,7 +323,6 @@ export function initExam2Tuner(app) {
     }
 
     app.semesterState.exam1Paste = getPasteGridText("sf-exam1-paste");
-    app.semesterState.exam2ActualPaste = getPasteGridText("sf-exam2-actual-paste");
     app.semesterState.perfPastes = Array.from({ length: count }, (_, i) =>
       getPasteGridText(`sf-perf-paste-${i}`)
     );

@@ -233,7 +233,7 @@ export function initBasic(app) {
           산출 결과를 직접 입력하시거나,
           <button type="button" class="link-btn tab-shortcut" data-tab="exam-helper" data-exam="mid2">2. 정기시험별 추정분할점수 산출</button>
           ·
-          <button type="button" class="link-btn tab-shortcut" data-tab="exam2-tuner">3. 실제 학생 성적 기반 정기시험2 추정 준비</button>
+          <button type="button" class="link-btn tab-shortcut" data-tab="exam2-tuner">3. 학생 성적 기반 정기시험2 준비</button>
           탭을 활용하세요.
         </p>
         <p class="component-max-hint" id="hint-exam2">만점 100점 척도</p>
@@ -589,7 +589,7 @@ function loadExam2FromSemester(app) {
     app.semesterState?.lastResult?.exam2Cutoffs;
   if (!cutoffs) {
     alert(
-      "저장된 초안이 없습니다. 3. 실제 학생 성적 기반 정기시험2 추정 준비 탭에서 정기시험2 초안을 산출한 뒤 「기본 산출에 적용」을 실행해 주세요."
+      "저장된 초안이 없습니다. 3. 학생 성적 기반 정기시험2 준비 탭에서 정기시험2 초안을 산출한 뒤 「기본 산출에 적용」을 실행해 주세요."
     );
     return;
   }

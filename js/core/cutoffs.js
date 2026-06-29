@@ -237,7 +237,7 @@ export function validateComponentConfig(config) {
   }
 
   if (c.exam2.weight === 0) {
-    issues.push("정기시험2 반영 비율이 0%이면 3. 실제 학생 성적 기반 정기시험2 추정 준비 기능을 사용할 수 없습니다.");
+    issues.push("정기시험2 반영 비율이 0%이면 3. 학생 성적 기반 정기시험2 준비 기능을 사용할 수 없습니다.");
   }
 
   return issues;
