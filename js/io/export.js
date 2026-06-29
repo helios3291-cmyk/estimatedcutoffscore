@@ -123,6 +123,7 @@ export function buildExamHelperExcelRows(examLabel, tierRows, cutoffs, passRateM
 }
 
 const STORAGE_KEY = "estimatedcutoffscore_state";
+const PROFILES_KEY = "estimatedcutoffscore_profiles";
 
 export function saveAppState(state) {
   try {
@@ -139,6 +140,72 @@ export function loadAppState() {
   } catch {
     return null;
   }
+}
+
+export function clearAllStorage() {
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(PROFILES_KEY);
+  } catch {
+    /* ignore */
+  }
+
+  try {
+    sessionStorage.removeItem("exam_cutoff_mid2_helper");
+    sessionStorage.removeItem("exam_cutoff_mid2_semester");
+    for (let i = sessionStorage.length - 1; i >= 0; i--) {
+      const k = sessionStorage.key(i);
+      if (k && k.startsWith("exam_cutoff_")) sessionStorage.removeItem(k);
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+function normalizeProfileName(name) {
+  return String(name || "").trim();
+}
+
+export function loadProfiles() {
+  try {
+    const raw = localStorage.getItem(PROFILES_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    if (!parsed || !Array.isArray(parsed.profiles)) return { version: 1, profiles: [] };
+    return { version: parsed.version || 1, profiles: parsed.profiles };
+  } catch {
+    return { version: 1, profiles: [] };
+  }
+}
+
+export function saveProfiles(doc) {
+  try {
+    localStorage.setItem(PROFILES_KEY, JSON.stringify(doc));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function upsertProfile(name, state) {
+  const profileName = normalizeProfileName(name);
+  if (!profileName) return { ok: false, error: "프로필 이름이 비어 있습니다." };
+
+  const doc = loadProfiles();
+  const now = new Date().toISOString();
+  const next = (doc.profiles || []).filter((p) => p?.name && p.name !== profileName);
+  next.unshift({ name: profileName, createdAt: now, state });
+
+  const saved = saveProfiles({ version: 1, updatedAt: now, profiles: next });
+  return saved ? { ok: true } : { ok: false, error: "로컬 저장소에 저장할 수 없습니다." };
+}
+
+export function deleteProfile(name) {
+  const profileName = normalizeProfileName(name);
+  const doc = loadProfiles();
+  const next = (doc.profiles || []).filter((p) => p?.name && p.name !== profileName);
+  const now = new Date().toISOString();
+  const saved = saveProfiles({ version: 1, updatedAt: now, profiles: next });
+  return saved ? { ok: true } : { ok: false, error: "로컬 저장소에서 삭제할 수 없습니다." };
 }
 
 export function examCutoffSessionKey(exam, source = null) {

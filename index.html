@@ -29,6 +29,29 @@
 
     <div id="app-readiness" class="readiness-bar" aria-live="polite"></div>
 
+    <section id="app-utility" class="utility-bar" aria-label="유틸리티">
+      <div class="utility-row">
+        <div class="utility-group">
+          <span class="utility-label">초기화</span>
+          <button type="button" class="secondary-btn small-btn" id="btn-reset-all">전체 초기화</button>
+          <button type="button" class="secondary-btn small-btn" id="btn-reset-students">학생 데이터만 초기화</button>
+        </div>
+        <div class="utility-group">
+          <span class="utility-label">프로필(학생 데이터 제외)</span>
+          <button type="button" class="secondary-btn small-btn" id="btn-profile-save">프로필 저장</button>
+          <button type="button" class="secondary-btn small-btn" id="btn-profile-load">프로필 불러오기</button>
+          <button type="button" class="secondary-btn small-btn" id="btn-profile-manage">프로필 삭제</button>
+        </div>
+        <div class="utility-group">
+          <button type="button" class="link-btn" id="btn-open-guide">사용 가이드</button>
+        </div>
+      </div>
+      <p class="utility-note">
+        저장된 데이터(학생 데이터 포함)는 <strong>브라우저 로컬 저장소(localStorage/sessionStorage)</strong>에만 저장되며,
+        서버로 전송·저장되지 않습니다.
+      </p>
+    </section>
+
     <nav class="tab-nav" role="tablist">
       <button type="button" class="tab-btn active" data-tab="basic" role="tab">1. 기본</button>
       <button type="button" class="tab-btn" data-tab="exam-helper" role="tab">2. 정기시험별 추정분할점수 산출</button>
@@ -42,6 +65,16 @@
       <div id="panel-exam2-tuner" class="tab-panel" role="tabpanel"></div>
       <div id="panel-student" class="tab-panel" role="tabpanel"></div>
     </main>
+
+    <div id="guide-modal" class="modal-overlay" hidden>
+      <div class="modal">
+        <div class="modal-head">
+          <h2 class="modal-title">사용 가이드</h2>
+          <button type="button" class="secondary-btn small-btn" id="btn-close-guide">닫기</button>
+        </div>
+        <div class="modal-body" id="guide-content"></div>
+      </div>
+    </div>
 
     <footer class="disclaimer">
       <p>본 도구는 교사의 추정을 돕는 참고용입니다. 실제 성적 산출 방식·학교 지침과 다를 수 있습니다.</p>

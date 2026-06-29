@@ -79,6 +79,108 @@ header h1 {
   margin-bottom: 1rem;
 }
 
+.utility-bar {
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+  padding: 0.75rem 0.85rem;
+  margin-bottom: 1rem;
+}
+
+.utility-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 0.5rem 0.85rem;
+}
+
+.utility-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.5rem;
+}
+
+.utility-label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #2d3748;
+  margin-right: 0.15rem;
+  white-space: nowrap;
+}
+
+.utility-note {
+  margin-top: 0.6rem;
+  text-align: center;
+  font-size: 0.8rem;
+  color: #4a5568;
+}
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  z-index: 1000;
+}
+
+.modal {
+  width: min(900px, 100%);
+  max-height: 85vh;
+  overflow: auto;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+  padding: 1rem;
+}
+
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.modal-title {
+  font-size: 1.05rem;
+  color: #2d3748;
+}
+
+.modal-body {
+  font-size: 0.92rem;
+  color: #1a2332;
+}
+
+.guide-section {
+  margin: 0.85rem 0 1.25rem;
+}
+
+.guide-section h3 {
+  font-size: 1rem;
+  color: #2d3748;
+  margin-bottom: 0.45rem;
+}
+
+.guide-steps {
+  margin-left: 1.1rem;
+}
+
+.guide-flow {
+  margin-top: 0.45rem;
+  padding: 0.5rem 0.65rem;
+  background: #f7fafc;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.85rem;
+  color: #2d3748;
+}
+
 .readiness-panel {
   padding: 0.65rem 0.85rem;
   background: #fff;
