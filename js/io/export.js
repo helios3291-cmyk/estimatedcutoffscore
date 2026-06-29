@@ -5,6 +5,7 @@ import {
   boundaryForPassRateGrade,
 } from "../core/grades.js";
 import { normalizeComponentConfig, computeContributions } from "../core/cutoffs.js";
+import { computeExamCutoffsFromPassMatrix } from "../core/passRates.js";
 
 export function exportToExcel(wbName, sheets) {
   if (typeof XLSX === "undefined") {
@@ -80,12 +81,11 @@ export function buildExamHelperExcelRows(examLabel, tierRows, cutoffs, passRateM
   const rows = [
     [`정기시험 추정분할점수 산출 도우미 — ${examLabel}`],
     [],
-    ["문항구분", "난이도", "해당문항번호", "문항수", "배점합", ...gradeCols],
+    ["난이도", "해당문항번호", "문항수", "배점합", ...gradeCols],
   ];
 
   for (const row of tierRows) {
     rows.push([
-      row.type,
       row.tierLabel,
       row.questionNums,
       row.questionCount,
@@ -100,10 +100,21 @@ export function buildExamHelperExcelRows(examLabel, tierRows, cutoffs, passRateM
     "",
     "",
     "",
-    "",
     ...gradeCols.map((g) => {
       const b = boundaryForPassRateGrade(g);
       return b ? cutoffs[b] ?? "" : "";
+    }),
+  ]);
+
+  const computed = computeExamCutoffsFromPassMatrix(tierRows, passRateMatrix, mode);
+  rows.push([
+    "역산 분할점수",
+    "",
+    "",
+    "",
+    ...gradeCols.map((g) => {
+      const b = boundaryForPassRateGrade(g);
+      return b && computed[b] != null ? computed[b] : "";
     }),
   ]);
 

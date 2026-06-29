@@ -212,6 +212,104 @@ function initialRatesForBoundary(targetScore, points, boundaryKey) {
   return rates;
 }
 
+export function calibrateGradeColumnRates(points, targetScore, boundaryKey = "AB") {
+  const target = round1(targetScore);
+  if (!Number.isFinite(target)) {
+    return {
+      하: MIN_PASS_RATE_PERCENT,
+      중: MIN_PASS_RATE_PERCENT,
+      상: MIN_PASS_RATE_PERCENT,
+    };
+  }
+
+  const seed = initialRatesForBoundary(target, points, boundaryKey);
+  let best = {
+    하: snapRatePercent((seed.하 || 0) * 100),
+    중: snapRatePercent((seed.중 || 0) * 100),
+    상: snapRatePercent((seed.상 || 0) * 100),
+  };
+  let bestErr = Math.abs(scoreFromPercentRates(points, best) - target);
+
+  for (let mid = MIN_PASS_RATE_PERCENT; mid <= 100; mid += 5) {
+    for (let high = MIN_PASS_RATE_PERCENT; high <= mid - GRADE_MONOTONIC_GAP; high += 5) {
+      for (let low = mid; low <= 100; low += 5) {
+        const candidate = { 하: low, 중: mid, 상: high };
+        const err = Math.abs(scoreFromPercentRates(points, candidate) - target);
+        if (err < bestErr) {
+          bestErr = err;
+          best = { ...candidate };
+        }
+      }
+    }
+  }
+
+  return best;
+}
+
+function scoreFromPercentRates(points, ratesPct) {
+  const rates = {};
+  for (const tier of TIER_ORDER) {
+    rates[tier] = (ratesPct[tier] || 0) / 100;
+  }
+  return expectedScore(points, rates);
+}
+
+function recalibrateAllColumns(matrix, points, cutoffs, mode) {
+  const cols = passRateGradeColumnsForMode(mode);
+  const next = cloneMatrix(matrix);
+
+  for (const grade of cols) {
+    const boundary = boundaryForPassRateGrade(grade);
+    const target = passRateTargetScore(grade, cutoffs, mode);
+    if (target == null || !boundary) continue;
+    next[grade] = calibrateGradeColumnRates(points, target, boundary);
+  }
+
+  return next;
+}
+
+/** exam-helper 제안 계산 전용 — 목표 분할점수에 맞춘 통과율 matrix */
+export function buildPassRateMatrixFromCutoffs(cutoffs, points, mode, tierRows = null) {
+  const rows = tierRows || buildTierRowsBasic(points);
+  let matrix = {};
+
+  for (const boundary of getBoundaryKeys(mode)) {
+    const grade = BOUNDARY_TO_PASS_GRADE[boundary];
+    const target = cutoffs[boundary];
+    if (!grade || !Number.isFinite(target)) continue;
+    matrix[grade] = calibrateGradeColumnRates(points, target, boundary);
+  }
+
+  if (mode === GRADE_MODE_FIVE && Number.isFinite(cutoffs.DE)) {
+    const eTarget = passRateTargetScore("E", cutoffs, mode);
+    if (eTarget != null) {
+      matrix.E = calibrateGradeColumnRates(points, eTarget, "E_fail");
+    }
+  }
+
+  for (let pass = 0; pass < 3; pass++) {
+    matrix = enforceTierMonotonicMatrix(matrix, mode);
+    matrix = recalibrateAllColumns(matrix, points, cutoffs, mode);
+    matrix = enforceGradeMonotonicMatrix(matrix, mode);
+    matrix = recalibrateAllColumns(matrix, points, cutoffs, mode);
+  }
+
+  const gapResult = applyAbilityGapWithCutoffs(matrix, rows, cutoffs, mode);
+  if (gapResult.matched) {
+    return {
+      matrix: gapResult.matrix,
+      abilityGapUsed: gapResult.maxGapUsed,
+      abilityGapMatched: true,
+    };
+  }
+
+  return {
+    matrix,
+    abilityGapUsed: null,
+    abilityGapMatched: false,
+  };
+}
+
 export function solvePassRatesForCutoffs(cutoffs, pointsByDifficulty, mode) {
   const keys = getBoundaryKeys(mode);
   const result = {};

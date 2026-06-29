@@ -14,19 +14,16 @@ import {
 import {
   aggregatePointsByDifficulty,
   validatePointsByDifficulty,
-  solvePassRatesForCutoffs,
-  expectedScore,
   validateQuestions,
-  passRatesToMatrix,
   matrixToPassRates,
+  buildPassRateMatrixFromCutoffs,
   buildTierRowsBasic,
   buildTierRowsFromQuestions,
-  enforceTierMonotonicMatrix,
   enforcePassRateMatrix,
   validateTierMonotonicMatrix,
   validateGradeMonotonicMatrix,
   computeExamCutoffsFromPassMatrix,
-  applyAbilityGapWithCutoffs,
+  expectedScoresByGrade,
   abilityGapForTier,
   ABILITY_GAP_WARN_THRESHOLD,
 } from "../core/passRates.js";
@@ -86,7 +83,7 @@ export function initExamHelper(app) {
     <section class="card">
       <h2>목표 추정 분할점수</h2>
       <div id="helper-cutoffs" class="boundaries-grid"></div>
-      <button type="button" id="calc-helper" class="primary-btn">통과율 제안 계산</button>
+      <button type="button" id="calc-helper" class="primary-btn">성취도별, 난이도별 예상 통과율 제안</button>
       <p id="helper-error" class="error-msg" hidden></p>
     </section>
 
@@ -98,12 +95,11 @@ export function initExamHelper(app) {
           <button type="button" id="apply-helper-basic" class="primary-btn small-btn">기본 산출에 적용</button>
         </div>
       </div>
-      <p class="notice">난이도별·성취도별 예상 정답률을 직접 수정할 수 있습니다. 하단에서 목표 분할점수와 예상 점수를 비교하세요.</p>
+      <p class="notice">제안된 통과율로 역산한 분할점수가 목표와 유사해야 합니다. 셀 값은 직접 수정할 수 있습니다.</p>
       <div class="table-wrap">
         <table class="data-table pass-rate-table" id="pass-rate-table">
           <thead>
             <tr>
-              <th rowspan="2">문항구분</th>
               <th rowspan="2">난이도</th>
               <th rowspan="2">해당문항번호</th>
               <th rowspan="2">문항수</th>
@@ -116,6 +112,7 @@ export function initExamHelper(app) {
           <tfoot id="pass-rate-foot"></tfoot>
         </table>
       </div>
+      <div id="helper-computed-cutoffs"></div>
     </section>
   `;
 
@@ -130,18 +127,75 @@ export function initExamHelper(app) {
     questions: defaultQuestions(),
   };
 
-  function enrichMatrixForFiveMode(matrix, cutoffs, points) {
-    if (app.gradeMode !== "five") return matrix;
-    const de = cutoffs.DE;
-    if (!Number.isFinite(de)) return matrix;
-    const extra = solvePassRatesForCutoffs({ E_fail: Math.max(0, de * 0.85) }, points, "six");
-    if (extra.E_fail) {
-      matrix.E = {};
-      for (const tier of TIER_ORDER) {
-        matrix.E[tier] = snapRatePercent((extra.E_fail[tier] || 0) * 100);
-      }
+  function renderPassRateTable(points, cutoffs, options = {}) {
+    const gradeCols = passRateGradeColumnsForMode(app.gradeMode);
+    app.helperState.tierRows = getTierRows();
+    const tierRows = app.helperState.tierRows;
+
+    let matrix;
+    if (options.fromMatrix) {
+      matrix = cloneMatrixForHelper(options.fromMatrix);
+    } else if (options.skipBuild && app.helperState.passRateMatrix) {
+      matrix = app.helperState.passRateMatrix;
+    } else {
+      const built = buildPassRateMatrixFromCutoffs(cutoffs, points, app.gradeMode, tierRows);
+      matrix = built.matrix;
+      app.helperState.abilityGapUsed = built.abilityGapUsed;
+      app.helperState.abilityGapMatched = built.abilityGapMatched;
     }
-    return enforceTierMonotonicMatrix(matrix, app.gradeMode);
+
+    app.helperState.passRateMatrix = matrix;
+    app.helperState.passRates = matrixToPassRates(matrix, app.gradeMode);
+
+    const headerSpan = document.getElementById("rate-header-span");
+    headerSpan.colSpan = gradeCols.length;
+    headerSpan.textContent = "최소능력자 예상정답률(%)";
+
+    document.getElementById("grade-col-header").innerHTML = gradeCols
+      .map((g) => `<th class="grade-col">${g}</th>`)
+      .join("");
+
+    document.getElementById("pass-rate-body").innerHTML = tierRows
+      .map(
+        (row) => {
+        const rateCells = gradeCols
+          .map((grade) => {
+            const val = matrix[grade]?.[row.tier] ?? 0;
+            return `
+            <td>
+              <input type="number" class="rate-cell-input"
+                data-tier="${row.tier}" data-grade="${grade}"
+                min="0" max="100" step="5" value="${val}">
+            </td>`;
+          })
+          .join("");
+
+        return `
+        <tr class="tier-row tier-row-${TIER_KEYS[row.tier]}">
+          <td class="tier-label tier-label-${TIER_KEYS[row.tier]}">${row.tierLabel}</td>
+          <td class="qnums">${row.questionNums}</td>
+          <td>${row.questionCount}</td>
+          <td>${row.pointsSum}</td>
+          ${rateCells}
+        </tr>`;
+      })
+      .join("");
+
+    renderPassRateFooter(tierRows, matrix, cutoffs);
+    renderComputedCutoffs(tierRows, matrix, cutoffs);
+
+    document.querySelectorAll(".rate-cell-input").forEach((input) => {
+      input.addEventListener("input", () => onRateCellChange(input, tierRows, cutoffs));
+    });
+    updateRateWarnings(matrix, gradeCols);
+  }
+
+  function cloneMatrixForHelper(matrix) {
+    const next = {};
+    for (const [grade, tiers] of Object.entries(matrix || {})) {
+      next[grade] = { ...(tiers || {}) };
+    }
+    return next;
   }
 
   function getTierRows() {
@@ -284,69 +338,6 @@ export function initExamHelper(app) {
     return readPoints();
   }
 
-  function renderPassRateTable(passRates, points, cutoffs, options = {}) {
-    const gradeCols = passRateGradeColumnsForMode(app.gradeMode);
-    let matrix = passRatesToMatrix(passRates, app.gradeMode);
-    matrix = enrichMatrixForFiveMode(matrix, cutoffs, points);
-
-    app.helperState.tierRows = getTierRows();
-    const tierRows = app.helperState.tierRows;
-
-    if (options.applyAbilityGap !== false) {
-      const gapResult = applyAbilityGapWithCutoffs(matrix, tierRows, cutoffs, app.gradeMode);
-      matrix = gapResult.matrix;
-      app.helperState.abilityGapUsed = gapResult.maxGapUsed;
-      app.helperState.abilityGapMatched = gapResult.matched;
-    }
-
-    app.helperState.passRateMatrix = matrix;
-    app.helperState.passRates = matrixToPassRates(matrix, app.gradeMode);
-
-    const headerSpan = document.getElementById("rate-header-span");
-    headerSpan.colSpan = gradeCols.length;
-    headerSpan.textContent = "최소능력자 예상정답률(%)";
-
-    document.getElementById("grade-col-header").innerHTML = gradeCols
-      .map((g) => `<th class="grade-col">${g}</th>`)
-      .join("");
-
-    document.getElementById("pass-rate-body").innerHTML = tierRows
-      .map((row, idx) => {
-        const typeCell =
-          idx === 0 ? `<td rowspan="${tierRows.length}">${row.type}</td>` : "";
-
-        const rateCells = gradeCols
-          .map((grade) => {
-            const val = matrix[grade]?.[row.tier] ?? 0;
-            return `
-            <td>
-              <input type="number" class="rate-cell-input"
-                data-tier="${row.tier}" data-grade="${grade}"
-                min="0" max="100" step="5" value="${val}">
-            </td>`;
-          })
-          .join("");
-
-        return `
-        <tr class="tier-row tier-row-${TIER_KEYS[row.tier]}">
-          ${typeCell}
-          <td class="tier-label tier-label-${TIER_KEYS[row.tier]}">${row.tierLabel}</td>
-          <td class="qnums">${row.questionNums}</td>
-          <td>${row.questionCount}</td>
-          <td>${row.pointsSum}</td>
-          ${rateCells}
-        </tr>`;
-      })
-      .join("");
-
-    renderPassRateFooter(tierRows, matrix, cutoffs);
-
-    document.querySelectorAll(".rate-cell-input").forEach((input) => {
-      input.addEventListener("input", () => onRateCellChange(input, tierRows, cutoffs));
-    });
-    updateRateWarnings(matrix, gradeCols);
-  }
-
   function updateRateWarnings(matrix, gradeCols) {
     document.querySelectorAll(".rate-cell-input").forEach((input) => {
       input.classList.remove("rate-input-warn", "rate-input-tier-warn", "rate-input-grade-warn");
@@ -409,8 +400,46 @@ export function initExamHelper(app) {
       app.gradeMode
     );
     renderPassRateFooter(tierRows, app.helperState.passRateMatrix, cutoffs);
+    renderComputedCutoffs(tierRows, app.helperState.passRateMatrix, cutoffs);
     updateRateWarnings(app.helperState.passRateMatrix, gradeCols);
     persistHelper(app);
+  }
+
+  function renderComputedCutoffs(tierRows, matrix, cutoffs) {
+    const el = document.getElementById("helper-computed-cutoffs");
+    if (!el) return;
+
+    const computed = computeExamCutoffsFromPassMatrix(tierRows, matrix, app.gradeMode);
+    const keys = getBoundaryKeys(app.gradeMode);
+
+    el.innerHTML = `
+      <h3 class="sub-heading">역산 추정 분할점수</h3>
+      <p class="notice">위 제안 통과율로 계산한 A/B, B/C, … 경계값입니다.</p>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr><th>경계</th><th>목표</th><th>역산</th><th>차이</th></tr>
+          </thead>
+          <tbody>
+            ${keys
+              .map((k) => {
+                const target = cutoffs[k];
+                const value = computed[k];
+                const diff =
+                  target != null && value != null ? round2(value - target) : null;
+                const match = diff != null && Math.abs(diff) < 0.05;
+                return `
+              <tr>
+                <td>${BOUNDARY_LABELS[k]}</td>
+                <td>${target != null ? target : "-"}</td>
+                <td><strong>${value != null ? value.toFixed(2) : "-"}</strong></td>
+                <td class="${match ? "diff-pos" : "diff-neg"}">${diff != null ? `${diff >= 0 ? "+" : ""}${diff.toFixed(2)}` : "-"}</td>
+              </tr>`;
+              })
+              .join("")}
+          </tbody>
+        </table>
+      </div>`;
   }
 
   function renderPassRateFooter(tierRows, matrix, cutoffs) {
@@ -436,11 +465,11 @@ export function initExamHelper(app) {
 
     document.getElementById("pass-rate-foot").innerHTML = `
       <tr class="footer-target">
-        <td colspan="5"><strong>목표 분할점수</strong></td>
+        <td colspan="4"><strong>목표 분할점수</strong></td>
         ${targetCells}
       </tr>
       <tr class="footer-expected">
-        <td colspan="5"><strong>예상 점수</strong></td>
+        <td colspan="4"><strong>예상 점수</strong></td>
         ${expectedCells}
       </tr>`;
   }
@@ -469,17 +498,15 @@ export function initExamHelper(app) {
     }
 
     const points = getPointsForCalc();
-    const passRates = solvePassRatesForCutoffs(cutoffs, points, app.gradeMode);
 
     app.helperState.cutoffs = cutoffs;
     app.helperState.points = points;
-    app.helperState.passRates = passRates;
     app.helperState.exam = document.getElementById("helper-exam").value;
 
     errEl.hidden = true;
     resultEl.hidden = false;
 
-    renderPassRateTable(passRates, points, cutoffs);
+    renderPassRateTable(points, cutoffs);
     persistHelper(app);
   }
 
@@ -554,7 +581,7 @@ export function initExamHelper(app) {
       app.gradeMode
     );
     if (!Object.keys(computed).length) {
-      alert("먼저 통과율 제안 계산을 실행해 주세요.");
+      alert("먼저 성취도별, 난이도별 예상 통과율 제안을 실행해 주세요.");
       return;
     }
     pushExamCutoffToSession(exam, computed, exam === "mid2" ? "helper" : null);
@@ -570,12 +597,8 @@ export function initExamHelper(app) {
       const el = document.getElementById(`hc-${k}`);
       if (el) el.addEventListener("input", () => persistHelper(app));
     }
-    if (!document.getElementById("helper-result").hidden && app.helperState.passRates) {
-      renderPassRateTable(
-        app.helperState.passRates,
-        app.helperState.points,
-        app.helperState.cutoffs
-      );
+    if (!document.getElementById("helper-result").hidden && app.helperState.cutoffs) {
+      renderPassRateTable(app.helperState.points, app.helperState.cutoffs);
     }
   });
 

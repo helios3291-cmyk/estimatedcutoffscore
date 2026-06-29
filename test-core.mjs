@@ -15,7 +15,10 @@ import {
   applyAbilityGapWithCutoffs,
   abilityGapForTier,
   enforceAbilityGapMatrix,
+  buildPassRateMatrixFromCutoffs,
   buildTierRowsBasic,
+  expectedScoreFromMatrix,
+  computeExamCutoffsFromPassMatrix,
   matrixMatchesCutoffs,
 } from "./js/core/passRates.js";
 import { getAppReadiness } from "./js/core/readiness.js";
@@ -35,6 +38,7 @@ import {
   normalizeFinalCutoffs,
   MIN_PASS_RATE_PERCENT,
   passRateGradeColumnsForMode,
+  passRateTargetScore,
 } from "./js/core/grades.js";
 
 const config = defaultComponentConfig();
@@ -291,6 +295,48 @@ console.assert(
 const gapCols = passRateGradeColumnsForMode(GRADE_MODE_FIVE);
 const gapCutoffs = { AB: 85, BC: 70, CD: 55, DE: 40 };
 const gapTierRows = buildTierRowsBasic(points);
+
+const builderFive = buildPassRateMatrixFromCutoffs(
+  gapCutoffs,
+  points,
+  GRADE_MODE_FIVE,
+  gapTierRows
+);
+console.assert(
+  matrixMatchesCutoffs(gapTierRows, builderFive.matrix, gapCutoffs, GRADE_MODE_FIVE),
+  "buildPassRateMatrixFromCutoffs five mode matches cutoffs"
+);
+for (const grade of passRateGradeColumnsForMode(GRADE_MODE_FIVE)) {
+  const target = passRateTargetScore(grade, gapCutoffs, GRADE_MODE_FIVE);
+  if (target == null) continue;
+  const score = expectedScoreFromMatrix(gapTierRows, builderFive.matrix, grade);
+  console.assert(
+    Math.abs(score - target) < 0.05,
+    `builder five ${grade} expected ~${target} got ${score}`
+  );
+}
+const computedFive = computeExamCutoffsFromPassMatrix(
+  gapTierRows,
+  builderFive.matrix,
+  GRADE_MODE_FIVE
+);
+console.assert(
+  Math.abs(computedFive.AB - gapCutoffs.AB) < 0.05,
+  `computed AB from builder expected ~${gapCutoffs.AB} got ${computedFive.AB}`
+);
+
+const sixCutoffs = { AB: 85, BC: 70, CD: 55, DE: 40, E_fail: 25 };
+const builderSix = buildPassRateMatrixFromCutoffs(
+  sixCutoffs,
+  points,
+  GRADE_MODE_SIX,
+  gapTierRows
+);
+console.assert(
+  matrixMatchesCutoffs(gapTierRows, builderSix.matrix, sixCutoffs, GRADE_MODE_SIX),
+  "buildPassRateMatrixFromCutoffs six mode matches cutoffs"
+);
+
 const gapBaseMatrix = passRatesToMatrix(
   solvePassRatesForCutoffs(gapCutoffs, points, GRADE_MODE_FIVE),
   GRADE_MODE_FIVE
