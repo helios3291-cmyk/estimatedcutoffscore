@@ -657,6 +657,75 @@ header h1 {
   margin-bottom: 0;
 }
 
+.paste-area-matrix {
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.paste-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.paste-format-guide {
+  margin-bottom: 1rem;
+  padding: 0.85rem 1rem;
+  background: #f7fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+
+.paste-format-title {
+  font-size: 0.9rem;
+  margin-bottom: 0.35rem;
+}
+
+.paste-format-desc {
+  font-size: 0.85rem;
+  color: #4a5568;
+  margin-bottom: 0.65rem;
+}
+
+.paste-format-table-wrap {
+  max-width: 520px;
+}
+
+.paste-format-table {
+  font-size: 0.8rem;
+}
+
+.paste-format-table .cell-muted {
+  color: #a0aec0;
+  font-style: italic;
+}
+
+.paste-format-table .cell-warn {
+  color: #c05621;
+  font-weight: 600;
+}
+
+.match-hint {
+  margin: 0.75rem 0 0;
+  padding: 0.65rem 0.85rem;
+  border-radius: 8px;
+  font-size: 0.88rem;
+}
+
+.match-hint.ok {
+  background: #f0fff4;
+  border: 1px solid #9ae6b4;
+  color: #276749;
+}
+
+.match-hint.warn {
+  background: #fffaf0;
+  border: 1px solid #fbd38d;
+  color: #c05621;
+}
+
 @media (max-width: 768px) {
   .weights-grid,
   .difficulty-counts,

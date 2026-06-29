@@ -15,6 +15,8 @@ import {
   validStudentTotals,
   summarizeStudentData,
   alignStudentsById,
+  buildMatrixPasteExample,
+  pasteFormatGuideHtml,
 } from "../core/studentData.js";
 import {
   applyExamCutoffsToBasic,
@@ -86,10 +88,37 @@ function renderPerfInputSections(app) {
     return `
       <div class="perf-input-block">
         <h3 class="sub-heading">${label}</h3>
-        <textarea id="sf-perf-paste-${i}" class="paste-area" rows="5" placeholder="엑셀에서 복사한 범위를 붙여 넣으세요">${pastes[i] ?? ""}</textarea>
+        <div class="paste-toolbar">
+          <button type="button" class="secondary-btn small-btn paste-example-btn" data-target="sf-perf-paste-${i}">예시 형식 붙여넣기</button>
+        </div>
+        <textarea id="sf-perf-paste-${i}" class="paste-area paste-area-matrix" rows="8" placeholder="엑셀에서 반×번호 행렬(1행=반, 1열=번호, 모서리=반번호)을 복사해 붙여 넣으세요">${pastes[i] ?? ""}</textarea>
         <p id="sf-perf-stats-${i}" class="component-max-hint"></p>
       </div>`;
   }).join("");
+}
+
+function fillPasteExample(targetId) {
+  const el = document.getElementById(targetId);
+  if (!el) return;
+  el.value = buildMatrixPasteExample({ classCount: 10, rowCount: 8 });
+  el.focus();
+}
+
+function bindPasteExampleButtons() {
+  const perfContainer = document.getElementById("sf-perf-inputs");
+  if (perfContainer && !perfContainer.dataset.exampleBound) {
+    perfContainer.dataset.exampleBound = "1";
+    perfContainer.addEventListener("click", (e) => {
+      const btn = e.target.closest(".paste-example-btn");
+      if (btn?.dataset.target) fillPasteExample(btn.dataset.target);
+    });
+  }
+
+  const examBtn = document.getElementById("sf-exam1-example");
+  if (examBtn && !examBtn.dataset.bound) {
+    examBtn.dataset.bound = "1";
+    examBtn.addEventListener("click", () => fillPasteExample("sf-exam1-paste"));
+  }
 }
 
 function fillTargetRatiosFromCombined(ratios, app) {
@@ -106,13 +135,18 @@ export function initExam2Tuner(app) {
   root.innerHTML = `
     <section class="card">
       <h2>학생 성적 데이터 입력</h2>
-      <p class="notice">엑셀에서 시트 범위를 <strong>복사·붙여넣기</strong>(탭/쉼표 구분). <strong>반×번호 행렬</strong>(모서리 <code>반/번호</code>, 열=1·2·3… 또는 1반·2반…, 행=번호, 셀=학생 총점) 또는 <strong>문항별 행</strong>(첫 열=번호, 이후 열=문항 점수 합산) 형식을 지원합니다. 미인정결·질병결·자퇴 등은 해당 학생만 비율 계산에서 제외됩니다. 수행평가 영역 수는 <strong>1. 기본</strong> 탭 설정을 따릅니다.</p>
+      ${pasteFormatGuideHtml()}
+      <p class="notice">엑셀 시트에서 <strong>헤더 포함 범위</strong>를 복사·붙여넣기(탭 구분)하세요. 정기1과 수행평가는 <strong>같은 반·번호 배치</strong>여야 매칭됩니다. 미인정결·질병결·자퇴·빈 칸은 해당 학생만 제외됩니다. 수행평가 영역 수는 <strong>1. 기본</strong> 탭 설정을 따릅니다.</p>
       <div>
         <h3 class="sub-heading">정기시험1</h3>
-        <textarea id="sf-exam1-paste" class="paste-area" rows="6" placeholder="엑셀에서 복사한 범위를 붙여 넣으세요"></textarea>
+        <div class="paste-toolbar">
+          <button type="button" class="secondary-btn small-btn" id="sf-exam1-example">예시 형식 붙여넣기</button>
+        </div>
+        <textarea id="sf-exam1-paste" class="paste-area paste-area-matrix" rows="10" placeholder="엑셀에서 반×번호 행렬(1행=반, 1열=번호, 모서리=반번호)을 복사해 붙여 넣으세요"></textarea>
         <p id="sf-exam1-stats" class="component-max-hint"></p>
       </div>
       <div id="sf-perf-inputs" class="components-grid"></div>
+      <p id="sf-match-hint" class="match-hint" hidden></p>
       <button type="button" id="sf-parse-data" class="primary-btn">데이터 반영</button>
       <p id="sf-parse-error" class="error-msg" hidden></p>
     </section>
@@ -236,15 +270,36 @@ export function initExam2Tuner(app) {
 
     const s1 = summarizeStudentData(exam1Parsed.students);
     document.getElementById("sf-exam1-stats").textContent = s1
-      ? `유효 ${s1.count}명 (제외 ${s1.excluded}명) · 평균 ${s1.mean} · 표준편차 ${s1.std}`
+      ? `유효 ${s1.count}명 (제외 ${s1.excluded}명) · ${exam1Parsed.layout === "matrix" ? "반×번호 행렬" : "문항별"} · 평균 ${s1.mean} · 표준편차 ${s1.std}`
       : "유효 데이터 없음";
 
     for (let i = 0; i < count; i++) {
       const s2 = summarizeStudentData(perfParsedList[i].students);
       const label = count > 1 ? `수행${i + 1}` : "수행";
       document.getElementById(`sf-perf-stats-${i}`).textContent = s2
-        ? `${label} · 유효 ${s2.count}명 (제외 ${s2.excluded}명) · 평균 ${s2.mean} · 표준편차 ${s2.std}`
+        ? `${label} · 유효 ${s2.count}명 (제외 ${s2.excluded}명) · ${perfParsedList[i].layout === "matrix" ? "반×번호 행렬" : "문항별"} · 평균 ${s2.mean} · 표준편차 ${s2.std}`
         : `${label} · 유효 데이터 없음`;
+    }
+
+    const matchHintEl = document.getElementById("sf-match-hint");
+    const aligned = alignStudentsById(exam1Parsed.students, perfParsedList);
+    if (s1?.count && perfParsedList.some((p) => validStudentTotals(p.students).length)) {
+      matchHintEl.hidden = false;
+      if (aligned.matchedCount > 0) {
+        const examValid = s1.count;
+        const perfValid = Math.max(
+          ...perfParsedList.map((p) => validStudentTotals(p.students).length)
+        );
+        matchHintEl.className = "match-hint ok";
+        matchHintEl.textContent = `정기1+수행 공통 매칭 ${aligned.matchedCount}명 (정기1 유효 ${examValid}명 · 수행 유효 ${perfValid}명). 헤더 없이 붙여 넣으면 매칭이 줄 수 있습니다 — 위 권장 형식을 사용하세요.`;
+      } else {
+        matchHintEl.className = "match-hint warn";
+        matchHintEl.textContent =
+          aligned.issues[0] ||
+          "정기1과 수행평가에서 공통 학생을 찾지 못했습니다. 두 시트 모두 반번호 헤더·같은 행·열 구조인지 확인하세요.";
+      }
+    } else {
+      matchHintEl.hidden = true;
     }
 
     app.semesterState.exam1Paste = document.getElementById("sf-exam1-paste").value;
@@ -493,6 +548,7 @@ export function initExam2Tuner(app) {
 
   renderTargetRatioInputs();
   renderPerfInputSections(app);
+  bindPasteExampleButtons();
 
   if (app.semesterState.exam1Paste) {
     document.getElementById("sf-exam1-paste").value = app.semesterState.exam1Paste;

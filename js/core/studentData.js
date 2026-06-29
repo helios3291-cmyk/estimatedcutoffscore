@@ -400,6 +400,56 @@ export function summarizeStudentData(students) {
   };
 }
 
+/** 엑셀 반×번호 행렬 붙여넣기 예시 (탭 구분) */
+export function buildMatrixPasteExample({ classCount = 10, rowCount = 8 } = {}) {
+  const classHeaders = Array.from({ length: classCount }, (_, i) => String(i + 1));
+  const lines = [[`반번호`, ...classHeaders].join("\t")];
+
+  for (let n = 1; n <= rowCount; n++) {
+    const cells = [String(n)];
+    for (let c = 1; c <= classCount; c++) {
+      if (n === 3 && c === 1) {
+        cells.push("");
+      } else if (n === 7 && c === 3) {
+        cells.push("자퇴");
+      } else if (n === rowCount && c <= classCount - 4) {
+        cells.push("");
+      } else {
+        const base = c === 3 && n >= 6 ? 24 : 30;
+        cells.push((base - (n % 3)).toFixed(2));
+      }
+    }
+    lines.push(cells.join("\t"));
+  }
+
+  return lines.join("\n");
+}
+
+export function pasteFormatGuideHtml() {
+  return `
+    <div class="paste-format-guide">
+      <p class="paste-format-title"><strong>권장 형식 (엑셀과 동일)</strong></p>
+      <p class="paste-format-desc">1행 1열 모서리 <code>반번호</code>(또는 <code>반</code>+<code>번호</code>), 1행에 반(1·2·3…), 1열에 학생 번호. 정기1·수행평가 <strong>같은 행·열 구조</strong>로 붙여 넣으면 <code>3반-7</code>처럼 학생 id가 맞춰집니다.</p>
+      <div class="table-wrap paste-format-table-wrap">
+        <table class="data-table paste-format-table">
+          <thead>
+            <tr>
+              <th>반번호</th>
+              <th>1</th><th>2</th><th>3</th><th>…</th><th>10</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>1</td><td>30.00</td><td>30.00</td><td>30.00</td><td>…</td><td>30.00</td></tr>
+            <tr><td>2</td><td>27.00</td><td>30.00</td><td>29.00</td><td>…</td><td>30.00</td></tr>
+            <tr><td>3</td><td class="cell-muted">(빈칸)</td><td>30.00</td><td>30.00</td><td>…</td><td>30.00</td></tr>
+            <tr><td>7</td><td>30.00</td><td>30.00</td><td class="cell-warn">자퇴</td><td>…</td><td>30.00</td></tr>
+            <tr><td>…</td><td colspan="5">학생 번호는 1열, 반별 점수는 해당 열</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>`;
+}
+
 function scoreById(students) {
   const map = new Map();
   for (const s of students || []) {
@@ -432,7 +482,7 @@ export function alignStudentsById(exam1Students, perfStudentsByArea) {
       exam1Scores: [],
       perfScoresByArea: perfMaps.map(() => []),
       matchedCount: 0,
-      issues: ["정기1과 수행평가 데이터에서 공통 학생을 찾지 못했습니다. 반×번호 형식·id가 일치하는지 확인해 주세요."],
+      issues: ["정기1과 수행평가 데이터에서 공통 학생을 찾지 못했습니다. 엑셀처럼 1행에 반(1·2·3…), 1열에 번호, 모서리에 반번호 헤더를 넣어 두 시트의 행·열 구조가 같은지 확인해 주세요."],
     };
   }
 

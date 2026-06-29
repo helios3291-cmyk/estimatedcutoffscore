@@ -22,7 +22,7 @@ import {
   matrixMatchesCutoffs,
 } from "./js/core/passRates.js";
 import { getAppReadiness } from "./js/core/readiness.js";
-import { parsePasteText, alignStudentsById } from "./js/core/studentData.js";
+import { parsePasteText, alignStudentsById, buildMatrixPasteExample } from "./js/core/studentData.js";
 import {
   computeGradeDistribution,
   computePartialContributionDistribution,
@@ -142,6 +142,21 @@ console.assert(
 console.assert(
   matrixPaste.students.find((s) => s.id === "2반-3")?.total === 65,
   "matrix cell score not summed"
+);
+
+const excelSample = parsePasteText(buildMatrixPasteExample({ classCount: 3, rowCount: 8 }));
+console.assert(excelSample.layout === "matrix", "excel sample should be matrix layout");
+console.assert(
+  excelSample.students.some((s) => s.id === "3반-7" && s.excluded),
+  "excel sample should mark 자퇴 at 3반-7"
+);
+const examSample = parsePasteText(buildMatrixPasteExample({ classCount: 3, rowCount: 8 }));
+const perfSample = parsePasteText(
+  buildMatrixPasteExample({ classCount: 3, rowCount: 8 }).replace(/24\.00/g, "30.00")
+);
+console.assert(
+  alignStudentsById(examSample.students, [perfSample.students]).matchedCount >= 20,
+  "identical 반번호 grids should match most students"
 );
 
 const matrixExclude = parsePasteText(
