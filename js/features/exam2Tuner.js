@@ -16,6 +16,8 @@ import {
   summarizeStudentData,
   alignStudentsById,
   buildMatrixPasteExample,
+  buildExam1PasteExample,
+  buildPerfPasteExample,
   pasteFormatGuideHtml,
 } from "../core/studentData.js";
 import {
@@ -25,6 +27,7 @@ import {
 } from "./basic.js";
 import { pushExamCutoffToSession } from "../io/export.js";
 import { applyExamCutoffsToHelper } from "./examHelper.js";
+import { getPasteGridText, initPasteGridElement, setPasteGridText } from "../ui/pasteGrid.js";
 
 function getConfig(app) {
   return getConfigForApp(app);
@@ -81,7 +84,6 @@ function renderPerfInputSections(app) {
   if (!container) return;
 
   const count = config.perfCount || 1;
-  const pastes = app.semesterState?.perfPastes || [];
 
   container.innerHTML = Array.from({ length: count }, (_, i) => {
     const label = count > 1 ? `수행평가 ${i + 1}` : "수행평가";
@@ -89,19 +91,45 @@ function renderPerfInputSections(app) {
       <div class="perf-input-block">
         <h3 class="sub-heading">${label}</h3>
         <div class="paste-toolbar">
-          <button type="button" class="secondary-btn small-btn paste-example-btn" data-target="sf-perf-paste-${i}">예시 형식 붙여넣기</button>
+          <button type="button" class="secondary-btn small-btn paste-example-btn" data-target="sf-perf-paste-${i}">예시 데이터 채우기</button>
         </div>
-        <textarea id="sf-perf-paste-${i}" class="paste-area paste-area-matrix" rows="8" placeholder="엑셀에서 반×번호 행렬(1행=반, 1열=번호, 모서리=반번호)을 복사해 붙여 넣으세요">${pastes[i] ?? ""}</textarea>
+        <div id="sf-perf-paste-${i}" class="paste-grid-host" data-paste-grid></div>
         <p id="sf-perf-stats-${i}" class="component-max-hint"></p>
       </div>`;
   }).join("");
 }
 
 function fillPasteExample(targetId) {
-  const el = document.getElementById(targetId);
-  if (!el) return;
-  el.value = buildMatrixPasteExample({ classCount: 10, rowCount: 8 });
-  el.focus();
+  const text =
+    targetId === "sf-exam1-paste" || targetId === "sf-exam2-actual-paste"
+      ? buildExam1PasteExample()
+      : buildPerfPasteExample();
+  setPasteGridText(targetId, text);
+  document.getElementById(targetId)?._pasteGrid?.focus();
+}
+
+function initAllPasteGrids(app) {
+  const config = getConfig(app);
+  const count = config.perfCount || 1;
+
+  const examHost = document.getElementById("sf-exam1-paste");
+  if (examHost) {
+    initPasteGridElement(examHost, { initialText: app.semesterState.exam1Paste || "" });
+  }
+
+  const exam2Host = document.getElementById("sf-exam2-actual-paste");
+  if (exam2Host) {
+    initPasteGridElement(exam2Host, {
+      initialText: app.semesterState.exam2ActualPaste || "",
+    });
+  }
+
+  for (let i = 0; i < count; i++) {
+    const host = document.getElementById(`sf-perf-paste-${i}`);
+    if (host) {
+      initPasteGridElement(host, { initialText: app.semesterState.perfPastes?.[i] || "" });
+    }
+  }
 }
 
 function bindPasteExampleButtons() {
@@ -118,6 +146,12 @@ function bindPasteExampleButtons() {
   if (examBtn && !examBtn.dataset.bound) {
     examBtn.dataset.bound = "1";
     examBtn.addEventListener("click", () => fillPasteExample("sf-exam1-paste"));
+  }
+
+  const exam2Btn = document.getElementById("sf-exam2-actual-example");
+  if (exam2Btn && !exam2Btn.dataset.bound) {
+    exam2Btn.dataset.bound = "1";
+    exam2Btn.addEventListener("click", () => fillPasteExample("sf-exam2-actual-paste"));
   }
 }
 
@@ -136,13 +170,13 @@ export function initExam2Tuner(app) {
     <section class="card">
       <h2>학생 성적 데이터 입력</h2>
       ${pasteFormatGuideHtml()}
-      <p class="notice">엑셀 시트에서 <strong>헤더 포함 범위</strong>를 복사·붙여넣기(탭 구분)하세요. 정기1과 수행평가는 <strong>같은 반·번호 배치</strong>여야 매칭됩니다. 미인정결·질병결·자퇴·빈 칸은 해당 학생만 제외됩니다. 수행평가 영역 수는 <strong>1. 기본</strong> 탭 설정을 따릅니다.</p>
+      <p class="notice">아래 표는 엑셀과 같은 <strong>반×번호</strong> 격자입니다. 엑셀에서 헤더 포함 범위를 복사해 표 안에 붙여 넣거나 직접 입력하세요. 정기1과 수행평가는 <strong>같은 반·번호 배치</strong>여야 매칭됩니다.</p>
       <div>
         <h3 class="sub-heading">정기시험1</h3>
         <div class="paste-toolbar">
-          <button type="button" class="secondary-btn small-btn" id="sf-exam1-example">예시 형식 붙여넣기</button>
+          <button type="button" class="secondary-btn small-btn" id="sf-exam1-example">예시 데이터 채우기</button>
         </div>
-        <textarea id="sf-exam1-paste" class="paste-area paste-area-matrix" rows="10" placeholder="엑셀에서 반×번호 행렬(1행=반, 1열=번호, 모서리=반번호)을 복사해 붙여 넣으세요"></textarea>
+        <div id="sf-exam1-paste" class="paste-grid-host" data-paste-grid></div>
         <p id="sf-exam1-stats" class="component-max-hint"></p>
       </div>
       <div id="sf-perf-inputs" class="components-grid"></div>
@@ -201,11 +235,22 @@ export function initExam2Tuner(app) {
       </div>
       <div id="sf-achieved-wrap"></div>
     </section>
+
+    <section class="card">
+      <h2>실제 정기시험2 학생 데이터</h2>
+      <p class="notice">정기1·수행과 <strong>동일한 반×번호 헤더·행·열 구조</strong>로 입력하세요. 4. 학생 예측 탭의 <strong>학급 학기말 성적 예측</strong>에 사용됩니다.</p>
+      <div class="paste-toolbar">
+        <button type="button" class="secondary-btn small-btn" id="sf-exam2-actual-example">예시 데이터 채우기</button>
+      </div>
+      <div id="sf-exam2-actual-paste" class="paste-grid-host" data-paste-grid></div>
+      <p id="sf-exam2-actual-stats" class="component-max-hint"></p>
+    </section>
   `;
 
   app.semesterState = app.semesterState || {
     exam1Students: [],
     perfStudentsByArea: [],
+    exam2ActualStudents: [],
     exam1Cutoffs: null,
     perfCutoffs: null,
     finalCutoffs: null,
@@ -248,14 +293,18 @@ export function initExam2Tuner(app) {
     const config = getConfig(app);
     const count = config.perfCount || 1;
 
-    const exam1Parsed = parsePasteText(document.getElementById("sf-exam1-paste").value);
+    const exam1Parsed = parsePasteText(getPasteGridText("sf-exam1-paste"));
+    const exam2ActualParsed = parsePasteText(getPasteGridText("sf-exam2-actual-paste"));
     const perfParsedList = [];
 
     for (let i = 0; i < count; i++) {
-      perfParsedList.push(parsePasteText(document.getElementById(`sf-perf-paste-${i}`)?.value || ""));
+      perfParsedList.push(parsePasteText(getPasteGridText(`sf-perf-paste-${i}`)));
     }
 
     const issues = [...(exam1Parsed.issues || [])];
+    if (exam2ActualParsed.issues?.length) {
+      issues.push(`실제 정기2: ${exam2ActualParsed.issues[0]}`);
+    }
     perfParsedList.forEach((p, i) => {
       if (p.issues?.length) issues.push(`수행${count > 1 ? i + 1 : ""}: ${p.issues[0]}`);
     });
@@ -266,12 +315,21 @@ export function initExam2Tuner(app) {
     }
 
     app.semesterState.exam1Students = exam1Parsed.students;
+    app.semesterState.exam2ActualStudents = exam2ActualParsed.students;
     app.semesterState.perfStudentsByArea = perfParsedList.map((p) => p.students);
 
     const s1 = summarizeStudentData(exam1Parsed.students);
     document.getElementById("sf-exam1-stats").textContent = s1
       ? `유효 ${s1.count}명 (제외 ${s1.excluded}명) · ${exam1Parsed.layout === "matrix" ? "반×번호 행렬" : "문항별"} · 평균 ${s1.mean} · 표준편차 ${s1.std}`
       : "유효 데이터 없음";
+
+    const s2a = summarizeStudentData(exam2ActualParsed.students);
+    const exam2StatsEl = document.getElementById("sf-exam2-actual-stats");
+    if (exam2StatsEl) {
+      exam2StatsEl.textContent = s2a
+        ? `유효 ${s2a.count}명 (제외 ${s2a.excluded}명) · ${exam2ActualParsed.layout === "matrix" ? "반×번호 행렬" : "문항별"} · 평균 ${s2a.mean} · 표준편차 ${s2a.std}`
+        : "유효 데이터 없음";
+    }
 
     for (let i = 0; i < count; i++) {
       const s2 = summarizeStudentData(perfParsedList[i].students);
@@ -302,9 +360,10 @@ export function initExam2Tuner(app) {
       matchHintEl.hidden = true;
     }
 
-    app.semesterState.exam1Paste = document.getElementById("sf-exam1-paste").value;
+    app.semesterState.exam1Paste = getPasteGridText("sf-exam1-paste");
+    app.semesterState.exam2ActualPaste = getPasteGridText("sf-exam2-actual-paste");
     app.semesterState.perfPastes = Array.from({ length: count }, (_, i) =>
-      document.getElementById(`sf-perf-paste-${i}`)?.value || ""
+      getPasteGridText(`sf-perf-paste-${i}`)
     );
 
     app.persist?.();
@@ -544,13 +603,11 @@ export function initExam2Tuner(app) {
 
   app.registerStateChange(() => {
     renderPerfInputSections(app);
+    initAllPasteGrids(app);
   });
 
   renderTargetRatioInputs();
   renderPerfInputSections(app);
   bindPasteExampleButtons();
-
-  if (app.semesterState.exam1Paste) {
-    document.getElementById("sf-exam1-paste").value = app.semesterState.exam1Paste;
-  }
+  initAllPasteGrids(app);
 }

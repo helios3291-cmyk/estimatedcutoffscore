@@ -400,8 +400,22 @@ export function summarizeStudentData(students) {
   };
 }
 
+function exampleCellScore(n, c, maxScore) {
+  if (maxScore >= 90) {
+    const raw = 38 + ((n * 17 + c * 23) % 58) + ((n + c) % 9) * 0.35;
+    const score = Math.min(maxScore, Math.round(raw * 100) / 100);
+    return score.toFixed(2);
+  }
+  const base = c === 3 && n >= 6 ? maxScore * 0.8 : maxScore;
+  return (base - (n % 3)).toFixed(2);
+}
+
 /** 엑셀 반×번호 행렬 붙여넣기 예시 (탭 구분) */
-export function buildMatrixPasteExample({ classCount = 10, rowCount = 8 } = {}) {
+export function buildMatrixPasteExample({
+  classCount = 10,
+  rowCount = 8,
+  maxScore = 30,
+} = {}) {
   const classHeaders = Array.from({ length: classCount }, (_, i) => String(i + 1));
   const lines = [[`반번호`, ...classHeaders].join("\t")];
 
@@ -415,8 +429,7 @@ export function buildMatrixPasteExample({ classCount = 10, rowCount = 8 } = {}) 
       } else if (n === rowCount && c <= classCount - 4) {
         cells.push("");
       } else {
-        const base = c === 3 && n >= 6 ? 24 : 30;
-        cells.push((base - (n % 3)).toFixed(2));
+        cells.push(exampleCellScore(n, c, maxScore));
       }
     }
     lines.push(cells.join("\t"));
@@ -425,28 +438,20 @@ export function buildMatrixPasteExample({ classCount = 10, rowCount = 8 } = {}) 
   return lines.join("\n");
 }
 
+/** 정기시험1 예시 — 100점 만점 가상 데이터 */
+export function buildExam1PasteExample(options = {}) {
+  return buildMatrixPasteExample({ maxScore: 100, classCount: 10, rowCount: 8, ...options });
+}
+
+/** 수행평가 예시 — 기본 30점 만점 가상 데이터 */
+export function buildPerfPasteExample(options = {}) {
+  return buildMatrixPasteExample({ maxScore: 30, classCount: 10, rowCount: 8, ...options });
+}
+
 export function pasteFormatGuideHtml() {
   return `
     <div class="paste-format-guide">
-      <p class="paste-format-title"><strong>권장 형식 (엑셀과 동일)</strong></p>
-      <p class="paste-format-desc">1행 1열 모서리 <code>반번호</code>(또는 <code>반</code>+<code>번호</code>), 1행에 반(1·2·3…), 1열에 학생 번호. 정기1·수행평가 <strong>같은 행·열 구조</strong>로 붙여 넣으면 <code>3반-7</code>처럼 학생 id가 맞춰집니다.</p>
-      <div class="table-wrap paste-format-table-wrap">
-        <table class="data-table paste-format-table">
-          <thead>
-            <tr>
-              <th>반번호</th>
-              <th>1</th><th>2</th><th>3</th><th>…</th><th>10</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr><td>1</td><td>30.00</td><td>30.00</td><td>30.00</td><td>…</td><td>30.00</td></tr>
-            <tr><td>2</td><td>27.00</td><td>30.00</td><td>29.00</td><td>…</td><td>30.00</td></tr>
-            <tr><td>3</td><td class="cell-muted">(빈칸)</td><td>30.00</td><td>30.00</td><td>…</td><td>30.00</td></tr>
-            <tr><td>7</td><td>30.00</td><td>30.00</td><td class="cell-warn">자퇴</td><td>…</td><td>30.00</td></tr>
-            <tr><td>…</td><td colspan="5">학생 번호는 1열, 반별 점수는 해당 열</td></tr>
-          </tbody>
-        </table>
-      </div>
+      <p class="paste-format-desc">아래 표는 엑셀 시트와 같은 <strong>반×번호</strong> 격자입니다. 1행에 반(1·2·3…), 1열에 학생 번호, 모서리는 <code>반번호</code>입니다. 정기1·수행평가 모두 같은 행·열 구조로 입력하세요.</p>
     </div>`;
 }
 
@@ -494,6 +499,62 @@ export function alignStudentsById(exam1Students, perfStudentsByArea) {
   return {
     exam1Scores,
     perfScoresByArea,
+    matchedCount: ids.length,
+    issues: [],
+  };
+}
+
+/** id "3반-7" → { classLabel, num } */
+export function splitStudentId(id) {
+  const m = String(id).match(/^(.+반)-(\d+)$/);
+  if (!m) return { classLabel: id, num: "" };
+  return { classLabel: m[1], num: m[2] };
+}
+
+/**
+ * 정기1·수행·실제 정기2 공통 학생 정렬 (학급 학기말 예측용).
+ */
+export function alignStudentsForSemesterPrediction(
+  exam1Students,
+  perfStudentsByArea,
+  exam2Students
+) {
+  const examMap = scoreById(exam1Students);
+  const exam2Map = scoreById(exam2Students);
+  const perfMaps = (perfStudentsByArea || []).map((list) => scoreById(list));
+
+  const ids = [...examMap.keys()].filter((id) => {
+    const e1 = examMap.get(id);
+    const e2 = exam2Map.get(id);
+    if (!e1 || e1.excluded || !Number.isFinite(e1.total)) return false;
+    if (!e2 || e2.excluded || !Number.isFinite(e2.total)) return false;
+    for (const pm of perfMaps) {
+      const p = pm.get(id);
+      if (!p || p.excluded || !Number.isFinite(p.total)) return false;
+    }
+    return true;
+  });
+
+  if (!ids.length) {
+    return {
+      studentIds: [],
+      exam1Scores: [],
+      exam2Scores: [],
+      perfScoresByArea: perfMaps.map(() => []),
+      matchedCount: 0,
+      issues: [
+        "정기1·수행평가·실제 정기2 데이터에서 공통 학생을 찾지 못했습니다. 3. 실제 학생 성적 기반 정기시험2 추정 준비 탭에서 세 데이터 모두 반번호 헤더·같은 행·열 구조로 「데이터 반영」했는지 확인해 주세요.",
+      ],
+    };
+  }
+
+  ids.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+
+  return {
+    studentIds: ids,
+    exam1Scores: ids.map((id) => examMap.get(id).total),
+    exam2Scores: ids.map((id) => exam2Map.get(id).total),
+    perfScoresByArea: perfMaps.map((pm) => ids.map((id) => pm.get(id).total)),
     matchedCount: ids.length,
     issues: [],
   };

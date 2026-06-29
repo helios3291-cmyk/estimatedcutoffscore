@@ -26,6 +26,28 @@ header h1 {
   font-size: 1.5rem;
   font-weight: 700;
   color: #1a365d;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0.5rem 0.75rem;
+}
+
+.header-companion-link {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: #3182ce;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.header-companion-link:hover {
+  text-decoration: underline;
+}
+
+.header-companion-link::after {
+  content: " ↗";
+  font-size: 0.7em;
 }
 
 .subtitle {
@@ -54,15 +76,29 @@ header h1 {
 }
 
 .readiness-bar {
+  margin-bottom: 1rem;
+}
+
+.readiness-panel {
+  padding: 0.65rem 0.85rem;
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+}
+
+.readiness-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #2d3748;
+  margin-bottom: 0.5rem;
+  text-align: center;
+}
+
+.readiness-chips {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
   gap: 0.5rem 0.75rem;
-  margin-bottom: 1rem;
-  padding: 0.5rem 0.75rem;
-  background: #fff;
-  border-radius: 10px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
 }
 
 .readiness-chip {
@@ -655,6 +691,97 @@ header h1 {
 .perf-input-block:last-child {
   border-bottom: none;
   margin-bottom: 0;
+}
+
+.paste-grid-host {
+  margin-bottom: 0.5rem;
+}
+
+.paste-grid-scroll {
+  overflow: auto;
+  max-height: 420px;
+  border: 1px solid #cbd5e0;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.paste-grid-table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+  font-family: "Malgun Gothic", "Segoe UI", sans-serif;
+}
+
+.paste-grid-table th,
+.paste-grid-table td {
+  border: 1px solid #e2e8f0;
+  padding: 0;
+  vertical-align: middle;
+}
+
+.paste-grid-corner,
+.paste-grid-col-head,
+.paste-grid-row-head {
+  background: #edf2f7;
+  color: #2d3748;
+  font-weight: 600;
+  text-align: center;
+  padding: 0.35rem 0.5rem;
+  white-space: nowrap;
+  position: sticky;
+  z-index: 2;
+}
+
+.paste-grid-corner {
+  left: 0;
+  z-index: 3;
+  min-width: 3.5rem;
+}
+
+.paste-grid-col-head {
+  top: 0;
+  min-width: 4.25rem;
+}
+
+.paste-grid-row-head {
+  left: 0;
+  min-width: 2.5rem;
+  position: sticky;
+  z-index: 1;
+}
+
+.paste-grid-cell {
+  width: 4.25rem;
+  min-width: 4.25rem;
+  padding: 0.3rem 0.35rem;
+  border: none;
+  background: transparent;
+  font-size: 0.82rem;
+  text-align: center;
+  font-family: Consolas, "Courier New", monospace;
+}
+
+.paste-grid-cell:focus {
+  outline: 2px solid #4299e1;
+  outline-offset: -2px;
+  background: #ebf8ff;
+}
+
+.paste-grid-hint {
+  margin-top: 0.4rem;
+  font-size: 0.8rem;
+  color: #718096;
+}
+
+.paste-grid-hint kbd {
+  font-family: inherit;
+  padding: 0.1rem 0.35rem;
+  border: 1px solid #cbd5e0;
+  border-radius: 4px;
+  background: #f7fafc;
+  font-size: 0.75rem;
 }
 
 .paste-area-matrix {

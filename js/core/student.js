@@ -65,3 +65,57 @@ export function predictStudentGrade(scores, config, finalCutoffs, mode) {
     error: null,
   };
 }
+
+/** 학급 전체 학기말 성취도 예측 */
+export function predictCohortGrades(aligned, config, finalCutoffs, mode) {
+  const { studentIds, exam1Scores, exam2Scores, perfScoresByArea, matchedCount, issues } =
+    aligned;
+
+  if (issues?.length || !matchedCount) {
+    return { rows: [], gradeCounts: {}, matchedCount: 0, error: issues?.[0] || "매칭된 학생이 없습니다." };
+  }
+
+  if (!finalCutoffs || !Number.isFinite(finalCutoffs.AB)) {
+    return {
+      rows: [],
+      gradeCounts: {},
+      matchedCount: 0,
+      error: "학기말 분할점수가 설정되지 않았습니다. 1. 기본 탭에서 「학기말 분할점수 산출」을 먼저 실행해 주세요.",
+    };
+  }
+
+  const rows = [];
+  const gradeCounts = {};
+
+  for (let i = 0; i < studentIds.length; i++) {
+    const id = studentIds[i];
+    const perfAreas = perfScoresByArea.map((col) => col[i]);
+    const result = predictStudentGrade(
+      { exam1: exam1Scores[i], exam2: exam2Scores[i], perfAreas },
+      config,
+      finalCutoffs,
+      mode
+    );
+
+    if (result.error) {
+      return {
+        rows: [],
+        gradeCounts: {},
+        matchedCount: 0,
+        error: `${id}: ${result.error}`,
+      };
+    }
+
+    rows.push({
+      id,
+      exam1: exam1Scores[i],
+      exam2: exam2Scores[i],
+      perfAreas,
+      finalScore: result.finalScore,
+      grade: result.grade,
+    });
+    gradeCounts[result.grade] = (gradeCounts[result.grade] || 0) + 1;
+  }
+
+  return { rows, gradeCounts, matchedCount: rows.length, error: null };
+}

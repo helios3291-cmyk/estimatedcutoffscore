@@ -22,7 +22,15 @@ import {
   matrixMatchesCutoffs,
 } from "./js/core/passRates.js";
 import { getAppReadiness } from "./js/core/readiness.js";
-import { parsePasteText, alignStudentsById, buildMatrixPasteExample } from "./js/core/studentData.js";
+import {
+  parsePasteText,
+  alignStudentsById,
+  alignStudentsForSemesterPrediction,
+  splitStudentId,
+  buildMatrixPasteExample,
+  buildExam1PasteExample,
+} from "./js/core/studentData.js";
+import { gridRowsToText, textToGridRows } from "./js/ui/pasteGrid.js";
 import {
   computeGradeDistribution,
   computePartialContributionDistribution,
@@ -30,7 +38,7 @@ import {
   partialCutoffsFromComponents,
   partialWeightMax,
 } from "./js/core/gradeDistribution.js";
-import { predictStudentGrade } from "./js/core/student.js";
+import { predictStudentGrade, predictCohortGrades } from "./js/core/student.js";
 import {
   GRADE_MODE_FIVE,
   GRADE_MODE_SIX,
@@ -144,6 +152,14 @@ console.assert(
   "matrix cell score not summed"
 );
 
+const exam1Example = parsePasteText(buildExam1PasteExample({ classCount: 3, rowCount: 8 }));
+console.assert(exam1Example.layout === "matrix", "exam1 example should be matrix layout");
+const exam1Scores = exam1Example.students.filter((s) => !s.excluded).map((s) => s.total);
+console.assert(
+  exam1Scores.length > 0 && exam1Scores.every((s) => s <= 100),
+  "exam1 example scores should be within 100-point scale"
+);
+
 const excelSample = parsePasteText(buildMatrixPasteExample({ classCount: 3, rowCount: 8 }));
 console.assert(excelSample.layout === "matrix", "excel sample should be matrix layout");
 console.assert(
@@ -158,6 +174,31 @@ console.assert(
   alignStudentsById(examSample.students, [perfSample.students]).matchedCount >= 20,
   "identical 반번호 grids should match most students"
 );
+
+const exam2Sample = parsePasteText(buildExam1PasteExample({ classCount: 3, rowCount: 8 }));
+const semesterAligned = alignStudentsForSemesterPrediction(
+  examSample.students,
+  [perfSample.students],
+  exam2Sample.students
+);
+console.assert(semesterAligned.matchedCount >= 20, "3-way semester alignment should match most students");
+console.assert(
+  semesterAligned.exam2Scores.length === semesterAligned.matchedCount,
+  "exam2 scores aligned with matched count"
+);
+
+const split = splitStudentId("3반-15");
+console.assert(split.classLabel === "3반" && split.num === "15", "splitStudentId parses 반-번호");
+
+const cohort = predictCohortGrades(semesterAligned, config, final, GRADE_MODE_FIVE);
+console.assert(!cohort.error && cohort.rows.length === cohort.matchedCount, "cohort prediction succeeds");
+console.assert(
+  cohort.rows.every((r) => r.grade && Number.isFinite(r.finalScore)),
+  "cohort rows have grade and final score"
+);
+
+const roundTrip = gridRowsToText(textToGridRows("반번호\t1\t2\n1\t80\t70"));
+console.assert(roundTrip.includes("반번호") && roundTrip.includes("80"), "paste grid TSV round trip");
 
 const matrixExclude = parsePasteText(
   "1반\t2반\t3반\n1\t80\t미인정결\t90\n2\t70\t75\t80"
@@ -398,13 +439,27 @@ for (const tier of ["하", "중", "상"]) {
 }
 
 const readinessEmpty = getAppReadiness({});
-console.assert(readinessEmpty.length === 2, "readiness has two chips");
+console.assert(readinessEmpty.length === 4, "readiness has four chips");
 console.assert(readinessEmpty[0].id === "final", "first chip is final");
-console.assert(readinessEmpty[1].status === "pending", "no student data pending");
+console.assert(readinessEmpty[1].id === "exam1-data", "second chip is exam1 data");
+console.assert(readinessEmpty[2].id === "exam2-data", "third chip is exam2 data");
+console.assert(readinessEmpty[3].id === "perf-data", "fourth chip is perf data");
+console.assert(readinessEmpty.every((c) => c.status === "pending"), "empty app all pending");
 
 const readinessPartial = getAppReadiness({
   semesterState: { exam1Students: [{ total: 80, excluded: false }] },
 });
-console.assert(readinessPartial[1].status === "partial", "exam1 only is partial");
+console.assert(readinessPartial[1].status === "ok", "exam1 only marks exam1 chip ok");
+
+const readinessFull = getAppReadiness({
+  finalCutoffs: final,
+  componentConfig: config,
+  semesterState: {
+    exam1Students: [{ total: 80, excluded: false }],
+    exam2ActualStudents: [{ total: 75, excluded: false }],
+    perfStudentsByArea: [[{ total: 30, excluded: false }]],
+  },
+});
+console.assert(readinessFull.every((c) => c.status === "ok"), "full data all readiness chips ok");
 
 console.log("All core tests passed.");

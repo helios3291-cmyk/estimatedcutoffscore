@@ -1,7 +1,14 @@
-import { predictStudentGrade } from "../core/student.js";
+import { predictStudentGrade, predictCohortGrades } from "../core/student.js";
 import { BOUNDARY_LABELS, getBoundaryKeys, normalizeFinalCutoffs, roundInt } from "../core/grades.js";
 import { getConfigForApp } from "./basic.js";
 import { perfWeightSum } from "../core/cutoffs.js";
+import {
+  alignStudentsForSemesterPrediction,
+  splitStudentId,
+  validStudentTotals,
+} from "../core/studentData.js";
+import { gradeListForMode } from "../core/gradeDistribution.js";
+import { exportToExcel, buildCohortExcelRows } from "../io/export.js";
 
 function renderPerfScoreInputs(app) {
   const config = getConfigForApp(app);
@@ -98,6 +105,27 @@ export function initStudentPredict(app) {
       <div class="table-wrap">
         <table class="data-table" id="distance-table">
           <thead><tr><th>경계</th><th>분할점수</th><th>차이 (+ 위)</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>학급 학기말 성적 예측</h2>
+      <p class="notice">전제: 1. 기본 탭에서 「학기말 분할점수 산출」 완료, 3. 실제 학생 성적 기반 정기시험2 추정 준비 탭에서 정기1·수행·<strong>실제 정기2</strong> 데이터 「데이터 반영」 완료.</p>
+      <button type="button" id="calc-cohort" class="primary-btn">학기말 성적 예측</button>
+      <p id="cohort-error" class="error-msg" hidden></p>
+    </section>
+
+    <section id="cohort-result" class="card" hidden>
+      <div class="card-head-row">
+        <h2>학급 학기말 성적 예측 결과</h2>
+        <button type="button" id="cohort-export" class="secondary-btn small-btn">엑셀로보내기</button>
+      </div>
+      <p id="cohort-summary" class="sample-summary"></p>
+      <div class="table-wrap">
+        <table class="data-table" id="cohort-table">
+          <thead></thead>
           <tbody></tbody>
         </table>
       </div>
@@ -229,6 +257,108 @@ export function initStudentPredict(app) {
   }
 
   document.getElementById("calc-student").addEventListener("click", calculateStudent);
+
+  let lastCohortResult = null;
+
+  function calculateCohort() {
+    const errEl = document.getElementById("cohort-error");
+    const resultEl = document.getElementById("cohort-result");
+
+    if (!app.finalCutoffs) {
+      errEl.textContent = "1. 기본 탭에서 학기말 분할점수를 먼저 산출해 주세요.";
+      errEl.hidden = false;
+      resultEl.hidden = true;
+      return;
+    }
+
+    const config = getConfigForApp(app);
+    const semester = app.semesterState || {};
+    const exam1 = semester.exam1Students || [];
+    const exam2 = semester.exam2ActualStudents || [];
+    const perfByArea = semester.perfStudentsByArea || [];
+
+    if (!validStudentTotals(exam1).length) {
+      errEl.textContent = "3번 탭에서 정기1 학생 데이터를 반영해 주세요.";
+      errEl.hidden = false;
+      resultEl.hidden = true;
+      return;
+    }
+    if (!validStudentTotals(exam2).length) {
+      errEl.textContent = "3번 탭 하단 실제 정기2 학생 데이터를 반영해 주세요.";
+      errEl.hidden = false;
+      resultEl.hidden = true;
+      return;
+    }
+
+    const aligned = alignStudentsForSemesterPrediction(exam1, perfByArea, exam2);
+    const finalCutoffs = syncFinalCutoffsFromBasic(app)
+      ? app.studentState.finalCutoffs
+      : normalizeFinalCutoffs(app.finalCutoffs, app.gradeMode);
+
+    const result = predictCohortGrades(aligned, config, finalCutoffs, app.gradeMode);
+
+    if (result.error) {
+      errEl.textContent = result.error;
+      errEl.hidden = false;
+      resultEl.hidden = true;
+      lastCohortResult = null;
+      return;
+    }
+
+    errEl.hidden = true;
+    resultEl.hidden = false;
+    lastCohortResult = result;
+
+    const perfHeaders = config.perfAreas.map((_, i) =>
+      config.perfAreas.length > 1 ? `수행${i + 1}` : "수행"
+    );
+    document.querySelector("#cohort-table thead").innerHTML = `
+      <tr>
+        <th>반</th><th>번호</th><th>정기1</th><th>정기2</th>
+        ${perfHeaders.map((h) => `<th>${h}</th>`).join("")}
+        <th>학기말 점수</th><th>예상 성취도</th>
+      </tr>`;
+
+    document.querySelector("#cohort-table tbody").innerHTML = result.rows
+      .map((row) => {
+        const { classLabel, num } = splitStudentId(row.id);
+        const perfCells = row.perfAreas.map((s) => `<td>${s}</td>`).join("");
+        return `
+      <tr>
+        <td>${classLabel}</td>
+        <td>${num}</td>
+        <td>${row.exam1}</td>
+        <td>${row.exam2}</td>
+        ${perfCells}
+        <td><strong>${row.finalScore}</strong></td>
+        <td class="grade-cell grade-${row.grade}">${row.grade}</td>
+      </tr>`;
+      })
+      .join("");
+
+    const grades = gradeListForMode(app.gradeMode);
+    const summaryParts = grades
+      .filter((g) => result.gradeCounts[g])
+      .map((g) => `${g} ${result.gradeCounts[g]}명`);
+    document.getElementById("cohort-summary").textContent = `매칭 ${result.matchedCount}명 · ${summaryParts.join(" · ")}`;
+  }
+
+  document.getElementById("calc-cohort").addEventListener("click", calculateCohort);
+
+  document.getElementById("cohort-export").addEventListener("click", () => {
+    if (!lastCohortResult?.rows?.length) return;
+    const config = getConfigForApp(app);
+    try {
+      exportToExcel("학급_학기말_성적_예측.xlsx", [
+        {
+          name: "예측",
+          rows: buildCohortExcelRows(lastCohortResult.rows, config),
+        },
+      ]);
+    } catch (e) {
+      alert(e.message || "엑셀보내기에 실패했습니다.");
+    }
+  });
 
   ["s-exam1", "s-exam2"].forEach((id) => {
     document.getElementById(id).addEventListener("input", () => persistStudent(app));

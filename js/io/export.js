@@ -6,6 +6,7 @@ import {
 } from "../core/grades.js";
 import { normalizeComponentConfig, computeContributions } from "../core/cutoffs.js";
 import { computeExamCutoffsFromPassMatrix } from "../core/passRates.js";
+import { splitStudentId } from "../core/studentData.js";
 
 export function exportToExcel(wbName, sheets) {
   if (typeof XLSX === "undefined") {
@@ -157,4 +158,16 @@ export function pullExamCutoffFromSession(exam, source = null) {
   } catch {
     return null;
   }
+}
+
+export function buildCohortExcelRows(rows, config) {
+  const perfHeaders = config.perfAreas.map((_, i) =>
+    config.perfAreas.length > 1 ? `수행${i + 1}` : "수행"
+  );
+  const header = ["반", "번호", "정기1", "정기2", ...perfHeaders, "학기말 점수", "예상 성취도"];
+  const dataRows = rows.map((row) => {
+    const { classLabel, num } = splitStudentId(row.id);
+    return [classLabel, num, row.exam1, row.exam2, ...row.perfAreas, row.finalScore, row.grade];
+  });
+  return [header, ...dataRows];
 }
