@@ -11,7 +11,7 @@ import {
   normalizeComponentConfig,
   defaultComponentConfig,
 } from "./js/core/cutoffs.js";
-import { parsePasteText, alignStudentsById, validStudentTotals } from "./js/core/studentData.js";
+import { parsePasteText, alignStudentsById, validStudentTotals, buildExam1PasteExample } from "./js/core/studentData.js";
 import {
   computeGradeDistribution,
   computePartialContributionDistribution,
@@ -21,6 +21,13 @@ import {
   parseTargetRatios,
 } from "./js/core/gradeDistribution.js";
 import { GRADE_MODE_FIVE, GRADE_MODE_SIX } from "./js/core/grades.js";
+import {
+  clearAllStorage,
+  saveAppState,
+  loadAppState,
+  saveProfiles,
+  loadProfiles,
+} from "./js/io/export.js";
 
 const LOG_PATH = join(dirname(fileURLToPath(import.meta.url)), "debug-b33a5f.log");
 const SESSION = "b33a5f";
@@ -298,6 +305,79 @@ test("H5: combine final equals e1+e2+perf components", "H5", () => {
     e2contribAB: final.AB - partial.AB,
   });
   assert(final.AB >= partial.AB, "final AB should be >= partial AB");
+});
+
+test("H6: clearAllStorage keeps saved profiles", "H6", () => {
+  const store = {};
+  const session = {};
+  globalThis.localStorage = {
+    getItem: (k) => (k in store ? store[k] : null),
+    setItem: (k, v) => {
+      store[k] = String(v);
+    },
+    removeItem: (k) => {
+      delete store[k];
+    },
+  };
+  globalThis.sessionStorage = {
+    getItem: (k) => (k in session ? session[k] : null),
+    setItem: (k, v) => {
+      session[k] = String(v);
+    },
+    removeItem: (k) => {
+      delete session[k];
+    },
+    get length() {
+      return Object.keys(session).length;
+    },
+    key: (i) => Object.keys(session)[i] ?? null,
+  };
+
+  saveAppState({ gradeMode: GRADE_MODE_FIVE, basicState: { x: 1 } });
+  saveProfiles({ version: 1, profiles: [{ name: "test-profile", state: { gradeMode: GRADE_MODE_FIVE } }] });
+  session.exam_cutoff_mid1 = "{}";
+
+  clearAllStorage();
+
+  assert(loadAppState() == null, "app state cleared");
+  assert(session.exam_cutoff_mid1 == null, "session cleared");
+  const profiles = loadProfiles();
+  assert(profiles.profiles.length === 1 && profiles.profiles[0].name === "test-profile", "profiles kept");
+  log("H6", "clearAllStorage", "profiles preserved", { profileCount: profiles.profiles.length });
+
+  delete globalThis.localStorage;
+  delete globalThis.sessionStorage;
+});
+
+// --- H7: exam1-only reflect must not require perf data ---
+test("H7: exam1-only reflect succeeds with empty perf grids", "H7", () => {
+  const exam1Text = buildExam1PasteExample();
+  const exam1Parsed = parsePasteText(exam1Text);
+  const emptyPerf = parsePasteText("");
+
+  assert(emptyPerf.issues?.length > 0, "empty perf grid should report issues");
+  assert(
+    !(exam1Parsed.issues?.length),
+    `exam1 paste should parse cleanly: ${exam1Parsed.issues?.[0]}`
+  );
+  const exam1Count = validStudentTotals(exam1Parsed.students).length;
+  assert(exam1Count > 0, "exam1 should yield valid students");
+
+  const exam1OnlyIssues = [...(exam1Parsed.issues || [])];
+  assert(exam1OnlyIssues.length === 0, "exam1-only reflect must not be blocked by perf");
+
+  const legacyCombinedIssues = [...exam1OnlyIssues];
+  if (emptyPerf.issues?.length) legacyCombinedIssues.push(`수행: ${emptyPerf.issues[0]}`);
+  assert(
+    legacyCombinedIssues.length > 0,
+    "legacy combined parse would have been blocked by empty perf"
+  );
+
+  log("H7", "exam1-only reflect", "isolated from empty perf", {
+    exam1Count,
+    exam1Issues: exam1Parsed.issues,
+    emptyPerfIssues: emptyPerf.issues,
+  });
 });
 
 // --- Summary ---

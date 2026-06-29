@@ -142,10 +142,9 @@ export function loadAppState() {
   }
 }
 
-export function clearAllStorage() {
+export function clearAppStateStorage() {
   try {
     localStorage.removeItem(STORAGE_KEY);
-    localStorage.removeItem(PROFILES_KEY);
   } catch {
     /* ignore */
   }
@@ -157,6 +156,34 @@ export function clearAllStorage() {
       const k = sessionStorage.key(i);
       if (k && k.startsWith("exam_cutoff_")) sessionStorage.removeItem(k);
     }
+  } catch {
+    /* ignore */
+  }
+}
+
+/** 앱 상태·세션만 삭제 (저장 프로필 유지) */
+export function clearAllStorage() {
+  // #region agent log
+  fetch("http://127.0.0.1:7458/ingest/43283681-e0a1-40fa-afae-721b1c54a9f6", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "b33a5f" },
+    body: JSON.stringify({
+      sessionId: "b33a5f",
+      location: "export.js:clearAllStorage",
+      message: "clear app state only, profiles preserved",
+      data: { removesState: true, removesProfiles: false },
+      hypothesisId: "H1",
+      timestamp: Date.now(),
+    }),
+  }).catch(() => {});
+  // #endregion
+  clearAppStateStorage();
+}
+
+export function clearAllStorageIncludingProfiles() {
+  clearAppStateStorage();
+  try {
+    localStorage.removeItem(PROFILES_KEY);
   } catch {
     /* ignore */
   }

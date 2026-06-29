@@ -24,8 +24,7 @@ import {
   validateGradeMonotonicMatrix,
   computeExamCutoffsFromPassMatrix,
   expectedScoresByGrade,
-  abilityGapForTier,
-  ABILITY_GAP_WARN_THRESHOLD,
+  collectPassRateWarnings,
 } from "../core/passRates.js";
 import {
   buildExamHelperExcelRows,
@@ -96,6 +95,7 @@ export function initExamHelper(app) {
         </div>
       </div>
       <p class="notice">제안된 통과율로 역산한 분할점수가 목표와 유사해야 합니다. 셀 값은 직접 수정할 수 있습니다.</p>
+      <p class="notice">통과율은 5% 단위 정수입니다. 상·하위 능력자 격차가 15%p를 넘거나, 최고 난이도(상)의 최하위 능력자 통과율이 20% 미만이면 목표 점수 맞춤을 위해 규칙이 완화된 것으로, 해당 칸에 붉은 테두리가 표시됩니다.</p>
       <div class="table-wrap">
         <table class="data-table pass-rate-table" id="pass-rate-table">
           <thead>
@@ -142,6 +142,27 @@ export function initExamHelper(app) {
       matrix = built.matrix;
       app.helperState.abilityGapUsed = built.abilityGapUsed;
       app.helperState.abilityGapMatched = built.abilityGapMatched;
+      app.helperState.hardTierMinUsed = built.hardTierMinUsed;
+      // #region agent log
+      const warnCells = collectPassRateWarnings(matrix, app.gradeMode);
+      fetch("http://127.0.0.1:7458/ingest/43283681-e0a1-40fa-afae-721b1c54a9f6", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "b33a5f" },
+        body: JSON.stringify({
+          sessionId: "b33a5f",
+          location: "examHelper.js:renderPassRateTable",
+          message: "pass rate table built",
+          data: {
+            abilityGapUsed: built.abilityGapUsed,
+            hardTierMinUsed: built.hardTierMinUsed,
+            warningCount: warnCells.length,
+            warnings: warnCells,
+          },
+          hypothesisId: "H2",
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion
     }
 
     app.helperState.passRateMatrix = matrix;
@@ -343,17 +364,11 @@ export function initExamHelper(app) {
       input.classList.remove("rate-input-warn", "rate-input-tier-warn", "rate-input-grade-warn");
     });
 
-    for (const tier of TIER_ORDER) {
-      if (abilityGapForTier(matrix, tier, gradeCols) > ABILITY_GAP_WARN_THRESHOLD) {
-        const top = gradeCols[0];
-        const bottom = gradeCols[gradeCols.length - 1];
-        for (const grade of [top, bottom]) {
-          const input = document.querySelector(
-            `.rate-cell-input[data-tier="${tier}"][data-grade="${grade}"]`
-          );
-          input?.classList.add("rate-input-warn");
-        }
-      }
+    for (const warn of collectPassRateWarnings(matrix, app.gradeMode)) {
+      const input = document.querySelector(
+        `.rate-cell-input[data-tier="${warn.tier}"][data-grade="${warn.grade}"]`
+      );
+      input?.classList.add("rate-input-warn");
     }
 
     for (const issue of validateGradeMonotonicMatrix(matrix, app.gradeMode)) {

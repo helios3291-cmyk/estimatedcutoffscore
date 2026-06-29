@@ -736,7 +736,11 @@ header h1 {
   box-shadow: 0 0 0 2px rgba(66, 153, 225, 0.2);
 }
 
-.rate-input-warn,
+.rate-input-warn {
+  border-color: #e53e3e !important;
+  box-shadow: 0 0 0 2px rgba(229, 62, 62, 0.35);
+}
+
 .grade-col-warn {
   border-color: #fc8181;
 }

@@ -23,6 +23,9 @@ export function round1(n) {
 }
 
 export const MIN_PASS_RATE_PERCENT = 10;
+export const HARD_TIER_MIN_PASS_RATE = 20;
+export const HARD_TIER_RELAXED_MIN_PASS_RATE = 5;
+export const NORMAL_ABILITY_GAP_MAX = 15;
 
 export function round2(n) {
   return Math.round(n * 100) / 100;
@@ -32,8 +35,9 @@ export function roundInt(n) {
   return Math.round(n);
 }
 
-export function snapRatePercent(n) {
-  return Math.max(MIN_PASS_RATE_PERCENT, Math.min(100, Math.round(n / 5) * 5));
+export function snapRatePercent(n, minPercent = MIN_PASS_RATE_PERCENT) {
+  const floor = Number.isFinite(minPercent) ? minPercent : MIN_PASS_RATE_PERCENT;
+  return Math.max(floor, Math.min(100, Math.round(n / 5) * 5));
 }
 
 export function snapScore5(n, max) {

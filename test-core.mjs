@@ -20,6 +20,7 @@ import {
   expectedScoreFromMatrix,
   computeExamCutoffsFromPassMatrix,
   matrixMatchesCutoffs,
+  collectPassRateWarnings,
 } from "./js/core/passRates.js";
 import { getAppReadiness } from "./js/core/readiness.js";
 import {
@@ -45,6 +46,8 @@ import {
   roundCutoffsMonotonic,
   normalizeFinalCutoffs,
   MIN_PASS_RATE_PERCENT,
+  HARD_TIER_MIN_PASS_RATE,
+  NORMAL_ABILITY_GAP_MAX,
   passRateGradeColumnsForMode,
   passRateTargetScore,
 } from "./js/core/grades.js";
@@ -392,6 +395,46 @@ console.assert(
   Math.abs(computedFive.AB - gapCutoffs.AB) < 0.05,
   `computed AB from builder expected ~${gapCutoffs.AB} got ${computedFive.AB}`
 );
+if (builderFive.abilityGapMatched) {
+  console.assert(
+    builderFive.abilityGapUsed <= NORMAL_ABILITY_GAP_MAX ||
+      collectPassRateWarnings(builderFive.matrix, GRADE_MODE_FIVE).some((w) => w.kind === "ability-gap"),
+    "ability gap >15 should show warnings when relaxed"
+  );
+}
+const bottomGrade = passRateGradeColumnsForMode(GRADE_MODE_FIVE).slice(-1)[0];
+const hardRate = builderFive.matrix[bottomGrade]?.상 ?? 0;
+if (builderFive.hardTierMinUsed >= HARD_TIER_MIN_PASS_RATE) {
+  console.assert(
+    hardRate >= HARD_TIER_MIN_PASS_RATE,
+    `hard tier ${bottomGrade} rate expected >=${HARD_TIER_MIN_PASS_RATE} got ${hardRate}`
+  );
+}
+if (hardRate < HARD_TIER_MIN_PASS_RATE) {
+  console.assert(
+    collectPassRateWarnings(builderFive.matrix, GRADE_MODE_FIVE).some((w) => w.kind === "hard-min"),
+    "hard tier below 20% should warn"
+  );
+}
+for (const tier of ["하", "중", "상"]) {
+  const gap = abilityGapForTier(builderFive.matrix, tier, gapCols);
+  if (builderFive.abilityGapMatched) {
+    console.assert(gap <= 30 && gap % 5 === 0, `ability gap on ${tier} should be 5-multiple <=30 got ${gap}`);
+    if (gap > NORMAL_ABILITY_GAP_MAX) {
+      console.assert(
+        [20, 25, 30].includes(gap),
+        `relaxed ability gap on ${tier} should be 20/25/30 got ${gap}`
+      );
+    }
+  } else if (gap > NORMAL_ABILITY_GAP_MAX) {
+    console.assert(
+      collectPassRateWarnings(builderFive.matrix, GRADE_MODE_FIVE).some(
+        (w) => w.kind === "ability-gap" && w.tier === tier
+      ),
+      `ability gap >15 on ${tier} should warn when cutoffs prioritized`
+    );
+  }
+}
 
 const sixCutoffs = { AB: 85, BC: 70, CD: 55, DE: 40, E_fail: 25 };
 const builderSix = buildPassRateMatrixFromCutoffs(

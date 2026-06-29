@@ -129,6 +129,7 @@ function applyProfileStateToApp(app, profileState) {
 
   app.refreshBasicUI?.();
   app.gradeModeCallbacks.forEach((fn) => fn());
+  app.refreshSemesterPasteUI?.();
   app.notifyStateChange?.();
   persist();
   return { ok: true };
@@ -136,6 +137,13 @@ function applyProfileStateToApp(app, profileState) {
 
 function buildGuideHtml() {
   return `
+    <div class="guide-section">
+      <h3>학생 성적 데이터 입력</h3>
+      <ul class="guide-steps">
+        <li>NEIS에서 학생 성적을 <strong>「XLS data」</strong>로 다운로드한 뒤, 엑셀에서 해당 시트 범위를 복사해 3·4번 탭 붙여넣기 표에 넣습니다.</li>
+      </ul>
+    </div>
+
     <div class="guide-section">
       <h3>저장 안내</h3>
       <ul class="guide-steps">
@@ -156,7 +164,7 @@ function buildGuideHtml() {
     <div class="guide-section">
       <h3>정기시험1 완료 후</h3>
       <ol class="guide-steps">
-        <li>3. 학생 성적 기반 정기시험2 준비 탭에서 <strong>정기시험1 학생 데이터</strong>를 입력하고 「데이터 반영」합니다.</li>
+        <li>3. 학생 성적 기반 정기시험2 준비 탭에서 <strong>정기시험1 학생 데이터</strong>를 입력하고 「정기시험1 데이터 반영」합니다.</li>
         <li>정기시험1 결과 분석(성취도별 비율 등)을 확인합니다.</li>
       </ol>
       <div class="guide-flow">3. 학생 성적 기반 정기시험2 준비(정기1) → 분석</div>
@@ -165,7 +173,7 @@ function buildGuideHtml() {
     <div class="guide-section">
       <h3>정기시험1 및 수행평가 완료 후</h3>
       <ol class="guide-steps">
-        <li>3번 탭에서 <strong>수행평가 학생 데이터</strong>까지 입력하고 「데이터 반영」합니다.</li>
+        <li>3번 탭에서 <strong>수행평가 학생 데이터</strong>까지 입력하고 「수행평가 데이터 반영」합니다.</li>
         <li>정기시험1+수행 결과 분석을 확인합니다.</li>
       </ol>
       <div class="guide-flow">3. 학생 성적 기반 정기시험2 준비(정기1+수행) → 분석</div>
@@ -221,6 +229,7 @@ function restore() {
   }
 
   app.refreshBasicUI?.();
+  app.refreshSemesterPasteUI?.();
   app.gradeModeCallbacks.forEach((fn) => fn());
   updateReadinessBar();
 }
@@ -293,7 +302,7 @@ function bindUtilityBar() {
   if (btnResetAll) {
     btnResetAll.addEventListener("click", () => {
       const ok = confirm(
-        "전체 초기화를 실행할까요?\n- 학생 데이터 포함 모든 입력/설정/저장값이 삭제됩니다.\n- 브라우저 로컬 저장소에서 삭제되며 되돌릴 수 없습니다."
+        "전체 초기화를 실행할까요?\n- 학생 데이터 포함 모든 입력/설정/저장값이 삭제됩니다.\n- 저장된 프로필은 유지됩니다.\n- 브라우저 로컬 저장소에서 삭제되며 되돌릴 수 없습니다."
       );
       if (!ok) return;
       clearAllStorage();
@@ -309,6 +318,7 @@ function bindUtilityBar() {
       if (!ok) return;
       app.semesterState = clearStudentDataInSemesterState(app.semesterState);
       persist();
+      app.refreshSemesterPasteUI?.();
       app.notifyStateChange?.();
       alert("학생 데이터가 초기화되었습니다.");
     });

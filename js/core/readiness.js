@@ -34,7 +34,7 @@ export function getAppReadiness(app) {
       hint:
         exam1Count > 0
           ? `유효 ${exam1Count}명`
-          : "3. 학생 성적 기반 정기시험2 준비 탭에서 정기1 데이터 반영",
+          : "3. 학생 성적 기반 정기시험2 준비 탭에서 정기시험1 데이터 반영",
     },
     {
       id: "exam2-data",

@@ -120,7 +120,7 @@ function renderPasteGrid(host, rows) {
         <tbody>${bodyRows}</tbody>
       </table>
     </div>
-    <p class="paste-grid-hint">엑셀에서 범위를 복사한 뒤 표 안 아무 셀이나 선택하고 <kbd>Ctrl+V</kbd> 하세요. 직접 입력도 가능합니다.</p>`;
+    <p class="paste-grid-hint">NEIS 「XLS data」 파일을 엑셀에서 연 뒤 범위를 복사해 표 안 아무 셀이나 선택하고 <kbd>Ctrl+V</kbd> 하세요. 직접 입력도 가능합니다.</p>`;
 }
 
 function readGridFromHost(host) {

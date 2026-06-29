@@ -151,7 +151,7 @@ export function initStudentPredict(app) {
 
     <section class="card">
       <h2>실제 정기시험2 학생 데이터</h2>
-      <p class="notice">3. 학생 성적 기반 정기시험2 준비 탭의 정기1·수행과 <strong>동일한 반×번호 헤더·행·열 구조</strong>로 입력하세요. 아래 「학급 학기말 성적 예측」에 사용됩니다.</p>
+      <p class="notice"><strong>학생 성적 데이터는 NEIS에서 「XLS data」로 다운로드한 파일을 엑셀에서 연 뒤, 해당 시트 범위를 복사하여 아래 표에 붙여 넣으세요.</strong> 3. 학생 성적 기반 정기시험2 준비 탭의 정기1·수행과 <strong>동일한 반×번호 헤더·행·열 구조</strong>로 입력하세요. 아래 「학급 학기말 성적 예측」에 사용됩니다.</p>
       <div class="paste-toolbar">
         <button type="button" class="secondary-btn small-btn" id="sf-exam2-actual-example">예시 데이터 채우기</button>
       </div>

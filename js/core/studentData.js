@@ -451,6 +451,7 @@ export function buildPerfPasteExample(options = {}) {
 export function pasteFormatGuideHtml() {
   return `
     <div class="paste-format-guide">
+      <p class="paste-format-desc"><strong>학생 성적 데이터는 NEIS에서 「XLS data」로 다운로드한 파일을 엑셀에서 연 뒤, 해당 시트 범위를 복사하여 아래 표에 붙여 넣으세요.</strong> 다른 형식(CSV 수동 정리 등)은 인식이 달라질 수 있습니다.</p>
       <p class="paste-format-desc">아래 표는 엑셀 시트와 같은 <strong>반×번호</strong> 격자입니다. 1행에 반(1·2·3…), 1열에 학생 번호, 모서리는 <code>반번호</code>입니다. 정기1·수행평가 모두 같은 행·열 구조로 입력하세요.</p>
     </div>`;
 }

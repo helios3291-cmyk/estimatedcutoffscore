@@ -343,6 +343,8 @@ export function initBasic(app) {
 
     refreshBoundaries();
     persistBasic(app);
+    app.syncPasteGridsToState?.();
+    app.refreshSemesterPasteUI?.();
     app.notifyStateChange?.();
   }
 

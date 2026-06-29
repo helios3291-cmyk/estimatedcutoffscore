@@ -140,6 +140,25 @@ function bindPasteExampleButtons() {
   }
 }
 
+export function syncPasteGridsToState(app) {
+  const examHost = document.getElementById("sf-exam1-paste");
+  if (!examHost?._pasteGrid) return;
+
+  const config = getConfig(app);
+  const count = config.perfCount || 1;
+  app.semesterState = app.semesterState || {};
+  app.semesterState.exam1Paste = getPasteGridText("sf-exam1-paste");
+  app.semesterState.perfPastes = Array.from({ length: count }, (_, i) =>
+    getPasteGridText(`sf-perf-paste-${i}`)
+  );
+}
+
+export function refreshSemesterPasteUI(app) {
+  renderPerfInputSections(app);
+  bindPasteExampleButtons();
+  initAllPasteGrids(app);
+}
+
 function fillTargetRatiosFromCombined(ratios, app) {
   const grades = gradeListForMode(app.gradeMode);
   for (const g of grades) {
@@ -155,7 +174,7 @@ export function initExam2Tuner(app) {
     <section class="card">
       <h2>학생 성적 데이터 입력</h2>
       ${pasteFormatGuideHtml()}
-      <p class="notice">아래 표는 엑셀과 같은 <strong>반×번호</strong> 격자입니다. 엑셀에서 헤더 포함 범위를 복사해 표 안에 붙여 넣거나 직접 입력하세요. 정기1과 수행평가는 <strong>같은 반·번호 배치</strong>여야 매칭됩니다.</p>
+      <p class="notice">아래 표는 엑셀과 같은 <strong>반×번호</strong> 격자입니다. NEIS에서 「XLS data」로 받은 파일을 엑셀에서 연 뒤 해당 시트 범위를 복사해 표 안에 붙여 넣거나 직접 입력하세요. 정기1과 수행평가는 <strong>같은 반·번호 배치</strong>여야 매칭됩니다.</p>
       <div>
         <h3 class="sub-heading">정기시험1</h3>
         <div class="paste-toolbar">
@@ -166,7 +185,10 @@ export function initExam2Tuner(app) {
       </div>
       <div id="sf-perf-inputs" class="components-grid"></div>
       <p id="sf-match-hint" class="match-hint" hidden></p>
-      <button type="button" id="sf-parse-data" class="primary-btn">데이터 반영</button>
+      <div class="btn-group">
+        <button type="button" id="sf-parse-exam1" class="primary-btn">정기시험1 데이터 반영</button>
+        <button type="button" id="sf-parse-perf" class="primary-btn">수행평가 데이터 반영</button>
+      </div>
       <p id="sf-parse-error" class="error-msg" hidden></p>
     </section>
 
@@ -261,54 +283,19 @@ export function initExam2Tuner(app) {
     return parseTargetRatios(inputs, app.gradeMode);
   }
 
-  function parseDataInputs() {
-    const errEl = document.getElementById("sf-parse-error");
-    errEl.hidden = true;
-
-    const config = getConfig(app);
-    const count = config.perfCount || 1;
-
-    const exam1Parsed = parsePasteText(getPasteGridText("sf-exam1-paste"));
-    const perfParsedList = [];
-
-    for (let i = 0; i < count; i++) {
-      perfParsedList.push(parsePasteText(getPasteGridText(`sf-perf-paste-${i}`)));
-    }
-
-    const issues = [...(exam1Parsed.issues || [])];
-    perfParsedList.forEach((p, i) => {
-      if (p.issues?.length) issues.push(`수행${count > 1 ? i + 1 : ""}: ${p.issues[0]}`);
-    });
-
-    if (issues.length) {
-      errEl.textContent = issues[0];
-      errEl.hidden = false;
-    }
-
-    app.semesterState.exam1Students = exam1Parsed.students;
-    app.semesterState.perfStudentsByArea = perfParsedList.map((p) => p.students);
-
-    const s1 = summarizeStudentData(exam1Parsed.students);
-    document.getElementById("sf-exam1-stats").textContent = s1
-      ? `유효 ${s1.count}명 (제외 ${s1.excluded}명) · ${exam1Parsed.layout === "matrix" ? "반×번호 행렬" : "문항별"} · 평균 ${s1.mean} · 표준편차 ${s1.std}`
-      : "유효 데이터 없음";
-
-    for (let i = 0; i < count; i++) {
-      const s2 = summarizeStudentData(perfParsedList[i].students);
-      const label = count > 1 ? `수행${i + 1}` : "수행";
-      document.getElementById(`sf-perf-stats-${i}`).textContent = s2
-        ? `${label} · 유효 ${s2.count}명 (제외 ${s2.excluded}명) · ${perfParsedList[i].layout === "matrix" ? "반×번호 행렬" : "문항별"} · 평균 ${s2.mean} · 표준편차 ${s2.std}`
-        : `${label} · 유효 데이터 없음`;
-    }
-
+  function updateMatchHint() {
     const matchHintEl = document.getElementById("sf-match-hint");
-    const aligned = alignStudentsById(exam1Parsed.students, perfParsedList);
-    if (s1?.count && perfParsedList.some((p) => validStudentTotals(p.students).length)) {
+    const exam1Students = app.semesterState.exam1Students || [];
+    const perfLists = app.semesterState.perfStudentsByArea || [];
+    const s1 = summarizeStudentData(exam1Students);
+
+    if (s1?.count && perfLists.some((list) => validStudentTotals(list).length)) {
+      const aligned = alignStudentsById(exam1Students, perfLists);
       matchHintEl.hidden = false;
       if (aligned.matchedCount > 0) {
         const examValid = s1.count;
         const perfValid = Math.max(
-          ...perfParsedList.map((p) => validStudentTotals(p.students).length)
+          ...perfLists.map((list) => validStudentTotals(list).length)
         );
         matchHintEl.className = "match-hint ok";
         matchHintEl.textContent = `정기1+수행 공통 매칭 ${aligned.matchedCount}명 (정기1 유효 ${examValid}명 · 수행 유효 ${perfValid}명). 헤더 없이 붙여 넣으면 매칭이 줄 수 있습니다 — 위 권장 형식을 사용하세요.`;
@@ -321,12 +308,68 @@ export function initExam2Tuner(app) {
     } else {
       matchHintEl.hidden = true;
     }
+  }
 
+  function parseExam1Data() {
+    const errEl = document.getElementById("sf-parse-error");
+    errEl.hidden = true;
+
+    const exam1Parsed = parsePasteText(getPasteGridText("sf-exam1-paste"));
+
+    if (exam1Parsed.issues?.length) {
+      errEl.textContent = exam1Parsed.issues[0];
+      errEl.hidden = false;
+    }
+
+    app.semesterState.exam1Students = exam1Parsed.students;
     app.semesterState.exam1Paste = getPasteGridText("sf-exam1-paste");
+
+    const s1 = summarizeStudentData(exam1Parsed.students);
+    document.getElementById("sf-exam1-stats").textContent = s1
+      ? `유효 ${s1.count}명 (제외 ${s1.excluded}명) · ${exam1Parsed.layout === "matrix" ? "반×번호 행렬" : "문항별"} · 평균 ${s1.mean} · 표준편차 ${s1.std}`
+      : "유효 데이터 없음";
+
+    updateMatchHint();
+    app.persist?.();
+    app.notifyStateChange?.();
+  }
+
+  function parsePerfData() {
+    const errEl = document.getElementById("sf-parse-error");
+    errEl.hidden = true;
+
+    const config = getConfig(app);
+    const count = config.perfCount || 1;
+    const perfParsedList = [];
+
+    for (let i = 0; i < count; i++) {
+      perfParsedList.push(parsePasteText(getPasteGridText(`sf-perf-paste-${i}`)));
+    }
+
+    const issues = [];
+    perfParsedList.forEach((p, i) => {
+      if (p.issues?.length) issues.push(`수행${count > 1 ? i + 1 : ""}: ${p.issues[0]}`);
+    });
+
+    if (issues.length) {
+      errEl.textContent = issues[0];
+      errEl.hidden = false;
+    }
+
+    app.semesterState.perfStudentsByArea = perfParsedList.map((p) => p.students);
     app.semesterState.perfPastes = Array.from({ length: count }, (_, i) =>
       getPasteGridText(`sf-perf-paste-${i}`)
     );
 
+    for (let i = 0; i < count; i++) {
+      const s2 = summarizeStudentData(perfParsedList[i].students);
+      const label = count > 1 ? `수행${i + 1}` : "수행";
+      document.getElementById(`sf-perf-stats-${i}`).textContent = s2
+        ? `${label} · 유효 ${s2.count}명 (제외 ${s2.excluded}명) · ${perfParsedList[i].layout === "matrix" ? "반×번호 행렬" : "문항별"} · 평균 ${s2.mean} · 표준편차 ${s2.std}`
+        : `${label} · 유효 데이터 없음`;
+    }
+
+    updateMatchHint();
     app.persist?.();
     app.notifyStateChange?.();
   }
@@ -444,7 +487,6 @@ export function initExam2Tuner(app) {
     }
 
     app.persist?.();
-    app.notifyStateChange?.();
   }
 
   function calcExam2Targets() {
@@ -525,13 +567,10 @@ export function initExam2Tuner(app) {
     }
 
     app.persist?.();
-    app.notifyStateChange?.();
   }
 
-  document.getElementById("sf-parse-data").addEventListener("click", () => {
-    parseDataInputs();
-    app.notifyStateChange?.();
-  });
+  document.getElementById("sf-parse-exam1").addEventListener("click", parseExam1Data);
+  document.getElementById("sf-parse-perf").addEventListener("click", parsePerfData);
   document.getElementById("sf-calc-ratios").addEventListener("click", calcRatios);
   document.getElementById("sf-calc-exam2").addEventListener("click", calcExam2Targets);
 
@@ -562,13 +601,9 @@ export function initExam2Tuner(app) {
     renderTargetRatioInputs();
   });
 
-  app.registerStateChange(() => {
-    renderPerfInputSections(app);
-    initAllPasteGrids(app);
-  });
+  app.syncPasteGridsToState = () => syncPasteGridsToState(app);
+  app.refreshSemesterPasteUI = () => refreshSemesterPasteUI(app);
 
   renderTargetRatioInputs();
-  renderPerfInputSections(app);
-  bindPasteExampleButtons();
-  initAllPasteGrids(app);
+  refreshSemesterPasteUI(app);
 }

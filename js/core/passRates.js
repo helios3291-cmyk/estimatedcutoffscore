@@ -15,12 +15,17 @@ import {
   GRADE_MODE_FIVE,
   snapRatePercent,
   MIN_PASS_RATE_PERCENT,
+  HARD_TIER_MIN_PASS_RATE,
+  HARD_TIER_RELAXED_MIN_PASS_RATE,
+  NORMAL_ABILITY_GAP_MAX,
 } from "./grades.js";
 
 const GRADE_MONOTONIC_GAP = 5;
 
-export const ABILITY_GAP_LIMITS = [20, 25, 30];
-export const ABILITY_GAP_WARN_THRESHOLD = 20;
+export const PREFERRED_ABILITY_GAPS = [5, 10, 15];
+export const RELAXED_ABILITY_GAPS = [20, 25, 30];
+export const ABILITY_GAP_LIMITS = [...PREFERRED_ABILITY_GAPS, ...RELAXED_ABILITY_GAPS];
+export const ABILITY_GAP_WARN_THRESHOLD = NORMAL_ABILITY_GAP_MAX;
 
 function cloneMatrix(matrix) {
   const next = {};
@@ -295,19 +300,116 @@ export function buildPassRateMatrixFromCutoffs(cutoffs, points, mode, tierRows =
   }
 
   const gapResult = applyAbilityGapWithCutoffs(matrix, rows, cutoffs, mode);
-  if (gapResult.matched) {
-    return {
-      matrix: gapResult.matrix,
-      abilityGapUsed: gapResult.maxGapUsed,
-      abilityGapMatched: true,
-    };
+  let resultMatrix = gapResult.matched ? gapResult.matrix : matrix;
+  let abilityGapUsed = gapResult.matched ? gapResult.maxGapUsed : null;
+  let abilityGapMatched = gapResult.matched;
+
+  for (const hardMin of HARD_TIER_MIN_CANDIDATES) {
+    let candidate = setHardTierMinimum(resultMatrix, mode, hardMin);
+    for (let pass = 0; pass < 2; pass++) {
+      candidate = enforceTierMonotonicMatrix(candidate, mode);
+      candidate = enforceGradeMonotonicMatrix(candidate, mode);
+    }
+    const gapRetry = applyAbilityGapWithCutoffs(candidate, rows, cutoffs, mode);
+    if (gapRetry.matched) {
+      resultMatrix = gapRetry.matrix;
+      abilityGapUsed = gapRetry.maxGapUsed;
+      abilityGapMatched = true;
+      logPassRateBuildResult(resultMatrix, mode, gapRetry.maxGapUsed, hardMin);
+      break;
+    }
+    if (matrixMatchesCutoffs(rows, candidate, cutoffs, mode)) {
+      resultMatrix = candidate;
+      abilityGapMatched = true;
+      logPassRateBuildResult(resultMatrix, mode, abilityGapUsed, hardMin);
+      break;
+    }
+  }
+
+  if (!abilityGapMatched) {
+    logPassRateBuildResult(resultMatrix, mode, abilityGapUsed, achievedHardTierMin(resultMatrix, mode));
   }
 
   return {
-    matrix,
-    abilityGapUsed: null,
-    abilityGapMatched: false,
+    matrix: resultMatrix,
+    abilityGapUsed,
+    abilityGapMatched,
+    hardTierMinUsed: achievedHardTierMin(resultMatrix, mode),
   };
+}
+
+const HARD_TIER_MIN_CANDIDATES = [
+  HARD_TIER_MIN_PASS_RATE,
+  15,
+  10,
+  HARD_TIER_RELAXED_MIN_PASS_RATE,
+];
+
+function lowestPassRateGrade(mode) {
+  const cols = passRateGradeColumnsForMode(mode);
+  return cols[cols.length - 1];
+}
+
+function setHardTierMinimum(matrix, mode, minRate) {
+  const bottom = lowestPassRateGrade(mode);
+  const next = cloneMatrix(matrix);
+  if (!next[bottom]) next[bottom] = {};
+  const floor = snapRatePercent(minRate, HARD_TIER_RELAXED_MIN_PASS_RATE);
+  next[bottom].상 = Math.max(next[bottom].상 ?? 0, floor);
+  return enforceTierMonotonicMatrix(next, mode);
+}
+
+function achievedHardTierMin(matrix, mode) {
+  const bottom = lowestPassRateGrade(mode);
+  const rate = matrix[bottom]?.상 ?? 0;
+  for (const min of HARD_TIER_MIN_CANDIDATES) {
+    if (rate >= min) return min;
+  }
+  return HARD_TIER_RELAXED_MIN_PASS_RATE;
+}
+
+function logPassRateBuildResult(matrix, mode, maxGap, hardMin) {
+  // #region agent log
+  const bottom = lowestPassRateGrade(mode);
+  fetch("http://127.0.0.1:7458/ingest/43283681-e0a1-40fa-afae-721b1c54a9f6", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "b33a5f" },
+    body: JSON.stringify({
+      sessionId: "b33a5f",
+      location: "passRates.js:buildPassRateMatrixFromCutoffs",
+      message: "pass rate matrix built",
+      data: {
+        maxGap,
+        hardMin,
+        hardTierRate: matrix[bottom]?.상 ?? null,
+      },
+      hypothesisId: "H2",
+      timestamp: Date.now(),
+    }),
+  }).catch(() => {});
+  // #endregion
+}
+
+export function collectPassRateWarnings(matrix, mode) {
+  const cols = passRateGradeColumnsForMode(mode);
+  const warnings = [];
+  const top = cols[0];
+  const bottom = cols[cols.length - 1];
+
+  const hardRate = matrix[bottom]?.상 ?? 0;
+  if (hardRate < HARD_TIER_MIN_PASS_RATE) {
+    warnings.push({ grade: bottom, tier: "상", kind: "hard-min" });
+  }
+
+  for (const tier of TIER_ORDER) {
+    const gap = abilityGapForTier(matrix, tier, cols);
+    if (gap > NORMAL_ABILITY_GAP_MAX) {
+      warnings.push({ grade: top, tier, kind: "ability-gap" });
+      warnings.push({ grade: bottom, tier, kind: "ability-gap" });
+    }
+  }
+
+  return warnings;
 }
 
 export function solvePassRatesForCutoffs(cutoffs, pointsByDifficulty, mode) {
