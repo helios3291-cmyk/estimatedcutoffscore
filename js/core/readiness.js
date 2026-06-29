@@ -1,6 +1,6 @@
 import { validStudentTotals } from "./studentData.js";
 
-/** 탭별 준비 상태 — UI 표시용 (최종 산출 + 학생 데이터) */
+/** 탭별 준비 상태 — UI 표시용 (학기말 산출 + 학생 데이터) */
 export function getAppReadiness(app) {
   const exam1Count = validStudentTotals(app.semesterState?.exam1Students || []).length;
   const hasPerfData = (app.semesterState?.perfStudentsByArea || []).some(
@@ -24,9 +24,9 @@ export function getAppReadiness(app) {
   return [
     {
       id: "final",
-      label: "최종 산출",
+      label: "학기말 산출",
       status: app.finalCutoffs ? "ok" : "pending",
-      hint: app.finalCutoffs ? "최종 분할점수 산출 완료" : "「최종 분할점수 산출」 필요",
+      hint: app.finalCutoffs ? "학기말 분할점수 산출 완료" : "「학기말 분할점수 산출」 필요",
     },
     {
       id: "student-data",

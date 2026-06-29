@@ -43,7 +43,7 @@ export function buildBasicExcelRows(finalCutoffs, gradeRanges, config, component
     const label = c.perfAreas.length > 1 ? `수행${i + 1}` : "수행";
     return [label, `${label}환산`];
   });
-  rows.push(["경계", "정기1", "정기1환산", "정기2", "정기2환산", ...perfHeaderPairs, "최종"]);
+  rows.push(["경계", "정기1", "정기1환산", "정기2", "정기2환산", ...perfHeaderPairs, "학기말 점수"]);
 
   for (const key of keys) {
     if (finalCutoffs[key] === undefined) continue;
@@ -79,7 +79,7 @@ export function buildBasicExcelRows(finalCutoffs, gradeRanges, config, component
 export function buildExamHelperExcelRows(examLabel, tierRows, cutoffs, passRateMatrix, mode) {
   const gradeCols = passRateGradeColumnsForMode(mode);
   const rows = [
-    [`정기시험 추정분할점수 산출 도우미 — ${examLabel}`],
+    [`정기시험 추정 분할점수 산출 — ${examLabel}`],
     [],
     ["난이도", "해당문항번호", "문항수", "배점합", ...gradeCols],
   ];

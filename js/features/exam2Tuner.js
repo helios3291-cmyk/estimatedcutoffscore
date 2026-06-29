@@ -22,6 +22,7 @@ import {
   syncSemesterCutoffsFromBasic,
 } from "./basic.js";
 import { pushExamCutoffToSession } from "../io/export.js";
+import { applyExamCutoffsToHelper } from "./examHelper.js";
 
 function getConfig(app) {
   return getConfigForApp(app);
@@ -105,7 +106,7 @@ export function initExam2Tuner(app) {
   root.innerHTML = `
     <section class="card">
       <h2>학생 성적 데이터 입력</h2>
-      <p class="notice">엑셀에서 시트 범위를 <strong>복사·붙여넣기</strong>(탭/쉼표 구분). <strong>반×번호 행렬</strong>(모서리 <code>반/번호</code>, 열=1·2·3… 또는 1반·2반…, 행=번호, 셀=학생 총점) 또는 <strong>문항별 행</strong>(첫 열=번호, 이후 열=문항 점수 합산) 형식을 지원합니다. 미인정결·질병결·자퇴 등은 해당 학생만 비율 계산에서 제외됩니다. 수행평가 영역 수는 <strong>기본 탭</strong> 설정을 따릅니다.</p>
+      <p class="notice">엑셀에서 시트 범위를 <strong>복사·붙여넣기</strong>(탭/쉼표 구분). <strong>반×번호 행렬</strong>(모서리 <code>반/번호</code>, 열=1·2·3… 또는 1반·2반…, 행=번호, 셀=학생 총점) 또는 <strong>문항별 행</strong>(첫 열=번호, 이후 열=문항 점수 합산) 형식을 지원합니다. 미인정결·질병결·자퇴 등은 해당 학생만 비율 계산에서 제외됩니다. 수행평가 영역 수는 <strong>1. 기본</strong> 탭 설정을 따릅니다.</p>
       <div>
         <h3 class="sub-heading">정기시험1</h3>
         <textarea id="sf-exam1-paste" class="paste-area" rows="6" placeholder="엑셀에서 복사한 범위를 붙여 넣으세요"></textarea>
@@ -125,19 +126,19 @@ export function initExam2Tuner(app) {
       <div id="sf-sample-summary"></div>
 
       <h2>정기시험1만 반영한 성취도별 학생 비율</h2>
-      <p class="notice">정기1 원점수와 정기1 분할점수를 직접 비교합니다 (반영비율·환산 미적용).</p>
+      <p class="notice">정기1 원점수와 정기1 분할점수를 직접 비교합니다 (반영 비율·환산 미적용).</p>
       <div id="sf-ratio-exam1"></div>
 
       <h2 class="sub-heading">정기시험1과 수행평가를 반영한 성취도별 학생 비율</h2>
-      <p class="notice" id="sf-ratio-combined-desc">정기2 미반영. 정기1·수행 분할점수의 환산점 합으로 A/B, B/C, … 경계를 설정하고, 학생별 정기1·수행 환산점 합과 비교합니다 (만점 = 정기1+수행 반영비율 합).</p>
+      <p class="notice" id="sf-ratio-combined-desc">정기2 미반영. 정기1·수행 분할점수의 환산점 합으로 A/B, B/C, … 경계를 설정하고, 학생별 정기1·수행 환산점 합과 비교합니다 (만점 = 정기1+수행 반영 비율 합).</p>
       <div id="sf-ratio-combined"></div>
       <div id="sf-partial-cutoffs-wrap"></div>
       <p id="sf-ratio-combined-skip" class="notice" hidden></p>
     </section>
 
     <section class="card">
-      <h2>정기시험2 추정분할점수 초안</h2>
-      <p class="notice">정기2 분할점수가 아직 확정되지 않았다는 전제입니다. 위 <strong>정기1+수행 비율</strong>을 참고하여, 모든 학생이 정기2에서 정기1과 동일한 점수를 받는다고 가정할 때 목표 <strong>최종</strong> 성취도 비율(합 100%)에 맞는 정기2 A/B, B/C, … 분할점수 초안을 산출합니다.</p>
+      <h2>정기시험2 추정 분할점수 초안</h2>
+      <p class="notice">정기2 분할점수가 아직 확정되지 않았다는 전제입니다. 위 <strong>정기1+수행 비율</strong>을 참고하여, 모든 학생이 정기2에서 정기1과 동일한 점수를 받는다고 가정할 때 목표 <strong>학기말</strong> 성취도 비율(합 100%)에 맞는 정기2 A/B, B/C, … 추정 분할점수 초안을 산출합니다.</p>
       <div id="sf-target-ratios" class="boundaries-grid"></div>
       <button type="button" id="sf-calc-exam2" class="primary-btn">초안 산출</button>
       <p id="sf-exam2-error" class="error-msg" hidden></p>
@@ -145,8 +146,11 @@ export function initExam2Tuner(app) {
 
     <section id="sf-exam2-result" class="card" hidden>
       <div class="card-head-row">
-        <h2>정기시험2 추정분할점수 초안</h2>
-        <button type="button" id="sf-apply-exam2" class="primary-btn small-btn">기본 산출에 적용</button>
+        <h2>정기시험2 추정 분할점수 초안</h2>
+        <div class="btn-group">
+          <button type="button" id="sf-apply-exam2" class="primary-btn small-btn">기본 산출에 적용</button>
+          <button type="button" id="sf-apply-exam2-helper" class="secondary-btn small-btn">정기시험별 산출 목표에 적용</button>
+        </div>
       </div>
       <div class="table-wrap">
         <table class="data-table" id="sf-exam2-table">
@@ -154,14 +158,13 @@ export function initExam2Tuner(app) {
           <tbody></tbody>
         </table>
       </div>
-      <h3 class="sub-heading">목표 최종 분할점수 (역산 기준)</h3>
+      <h3 class="sub-heading">목표 학기말 분할점수 (역산 기준)</h3>
       <div class="table-wrap">
         <table class="data-table" id="sf-final-table">
-          <thead><tr><th>경계</th><th>목표 최종</th></tr></thead>
+          <thead><tr><th>경계</th><th>목표 학기말</th></tr></thead>
           <tbody></tbody>
         </table>
       </div>
-      <div id="sf-raw-values-wrap"></div>
       <div id="sf-achieved-wrap"></div>
     </section>
   `;
@@ -415,7 +418,7 @@ export function initExam2Tuner(app) {
     );
 
     if (result.error || !result.exam2Cutoffs) {
-      errEl.textContent = result.error || "정기2 추정분할점수 초안을 계산할 수 없습니다.";
+      errEl.textContent = result.error || "정기2 추정 분할점수 초안을 계산할 수 없습니다.";
       errEl.hidden = false;
       resultEl.hidden = true;
       return;
@@ -429,7 +432,7 @@ export function initExam2Tuner(app) {
     document.querySelector("#sf-exam2-table tbody").innerHTML = keys
       .map(
         (k) =>
-          `<tr><td>${BOUNDARY_LABELS[k]}</td><td><strong>${result.exam2Cutoffs[k]}</strong></td></tr>`
+          `<tr><td>${BOUNDARY_LABELS[k]}</td><td><strong>${result.exam2Cutoffs[k].toFixed(2)}</strong></td></tr>`
       )
       .join("");
 
@@ -440,27 +443,9 @@ export function initExam2Tuner(app) {
       )
       .join("");
 
-    if (result.rawValues) {
-      document.getElementById("sf-raw-values-wrap").innerHTML = `
-        <h3 class="sub-heading">정기2 역산 원값 (5점 반올림 전)</h3>
-        <div class="table-wrap">
-          <table class="data-table">
-            <thead><tr><th>경계</th><th>원값</th></tr></thead>
-            <tbody>${keys
-              .map(
-                (k) =>
-                  `<tr><td>${BOUNDARY_LABELS[k]}</td><td>${Math.round(result.rawValues[k] * 10) / 10}</td></tr>`
-              )
-              .join("")}</tbody>
-          </table>
-        </div>`;
-    } else {
-      document.getElementById("sf-raw-values-wrap").innerHTML = "";
-    }
-
     if (result.achieved) {
       document.getElementById("sf-achieved-wrap").innerHTML = `
-        <h3 class="sub-heading">가정 적용 후 예상 최종 비율</h3>
+        <h3 class="sub-heading">가정 적용 후 예상 학기말 비율</h3>
         ${ratioTableHtml(result.achieved.ratios, result.achieved.counts, result.achieved.total)}`;
     }
 
@@ -478,13 +463,24 @@ export function initExam2Tuner(app) {
   document.getElementById("sf-apply-exam2").addEventListener("click", () => {
     const cutoffs = app.semesterState.lastResult?.exam2Cutoffs;
     if (!cutoffs) {
-      alert("먼저 정기시험2 추정분할점수 초안을 산출해 주세요.");
+      alert("먼저 정기시험2 추정 분할점수 초안을 산출해 주세요.");
       return;
     }
     pushExamCutoffToSession("mid2", cutoffs, "semester");
     applyExamCutoffsToBasic("mid2", cutoffs, app);
-    alert("정기시험2 추정분할점수 초안이 기본 탭에 적용되었습니다.");
+    alert("정기시험2 추정 분할점수 초안이 1. 기본 탭에 적용되었습니다.");
     app.switchTab?.("basic");
+  });
+
+  document.getElementById("sf-apply-exam2-helper").addEventListener("click", () => {
+    const cutoffs = app.semesterState.lastResult?.exam2Cutoffs;
+    if (!cutoffs) {
+      alert("먼저 정기시험2 추정 분할점수 초안을 산출해 주세요.");
+      return;
+    }
+    applyExamCutoffsToHelper("mid2", cutoffs, app);
+    alert("정기시험2 추정 분할점수 초안이 2. 정기시험별 추정분할점수 산출 탭의 목표 분할점수에 적용되었습니다.");
+    app.switchTab?.("exam-helper");
   });
 
   app.registerGradeModeChange(() => {

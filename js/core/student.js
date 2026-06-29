@@ -29,7 +29,7 @@ export function predictStudentGrade(scores, config, finalCutoffs, mode) {
   }
 
   if (!finalCutoffs || !Number.isFinite(finalCutoffs.AB)) {
-    return { error: "최종 분할점수가 설정되지 않았습니다. 기본 산출 탭에서 먼저 계산해 주세요." };
+    return { error: "학기말 분할점수가 설정되지 않았습니다. 1. 기본 탭에서 먼저 계산해 주세요." };
   }
 
   if (exam1 > c.exam1.max) {

@@ -586,7 +586,7 @@ export function initExamHelper(app) {
     }
     pushExamCutoffToSession(exam, computed, exam === "mid2" ? "helper" : null);
     applyExamCutoffsToBasic(exam, computed, app);
-    alert(`${EXAM_LABELS[exam]} 추정 분할점수(소수 둘째 자리)가 기본 탭에 적용되었습니다.`);
+    alert(`${EXAM_LABELS[exam]} 추정 분할점수(소수 둘째 자리)가 1. 기본 탭에 적용되었습니다.`);
     app.switchTab?.("basic");
   });
 
@@ -627,7 +627,27 @@ export function getHelperStateForSave(app) {
   return app.helperState || null;
 }
 
-/** 기본 탭 바로가기 — 대상 시험 선택 후 exam-helper 탭으로 이동 */
+/** 2번 탭 목표 분할점수에 exam2 초안 등 적용 */
+export function applyExamCutoffsToHelper(exam, cutoffs, app) {
+  focusExamHelper(app, exam);
+  app.helperState = app.helperState || {};
+
+  const keys = getBoundaryKeys(app.gradeMode);
+  for (const k of keys) {
+    const el = document.getElementById(`hc-${k}`);
+    if (el && cutoffs[k] != null) el.value = cutoffs[k];
+  }
+
+  app.helperState.cutoffs = { ...cutoffs };
+  app.helperState.exam = exam === "mid2" ? "mid2" : "mid1";
+
+  const resultEl = document.getElementById("helper-result");
+  if (resultEl) resultEl.hidden = true;
+
+  app.persist?.();
+}
+
+/** 1. 기본 탭 바로가기 — 대상 시험 선택 후 exam-helper 탭으로 이동 */
 export function focusExamHelper(app, examKey) {
   const select = document.getElementById("helper-exam");
   const exam = examKey === "mid2" ? "mid2" : "mid1";

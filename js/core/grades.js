@@ -57,6 +57,24 @@ export function snapCutoffsMonotonic(rawCutoffs, mode, maxScore) {
   return result;
 }
 
+/** 정기2 역산 초안 — 소수 둘째 자리, 단조 감소 */
+export function roundCutoffsMonotonic(rawCutoffs, mode, maxScore) {
+  const keys = getBoundaryKeys(mode);
+  const result = {};
+  let prev = maxScore + 0.01;
+
+  for (const key of keys) {
+    let val = round2(Math.max(0, Math.min(maxScore, rawCutoffs[key] ?? 0)));
+    if (val >= prev) {
+      val = round2(Math.max(0, prev - 0.01));
+    }
+    result[key] = val;
+    prev = val;
+  }
+
+  return result;
+}
+
 export const TIER_LABELS_KO = { 하: "쉬움", 중: "보통", 상: "어려움" };
 
 export const GRADE_FOR_BOUNDARY = {
@@ -176,7 +194,7 @@ export function validateWeights(weights) {
   }
 
   if (exam2 === 0) {
-    issues.push("정기시험2 반영 비율이 0%이면 정기시험2 초안 도우미 기능을 사용할 수 없습니다.");
+    issues.push("정기시험2 반영 비율이 0%이면 3. 학기말 초안 산출 기능을 사용할 수 없습니다.");
   }
 
   return issues;

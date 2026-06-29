@@ -178,7 +178,8 @@ test("H3: solveExam2 succeeds on spread 100-student six-mode ratios", "H3", () =
     targetFinalAB: r.targetFinal?.AB,
   });
   assert(!r.error, r.error || "should succeed");
-  assert(r.exam2Cutoffs?.AB % 5 === 0, "exam2 AB should be 5-point grid");
+  assert(Number.isFinite(r.exam2Cutoffs?.AB), "exam2 AB should be finite");
+  assert(r.exam2Cutoffs.AB > r.exam2Cutoffs.BC, "exam2 cutoffs should be monotonic");
 });
 
 test("H3: identical scores returns error (expected impossibility)", "H3", () => {

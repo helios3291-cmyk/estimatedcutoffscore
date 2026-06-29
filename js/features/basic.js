@@ -115,7 +115,7 @@ function renderConfigTable(app) {
       <td><input type="number" id="w-perf-${i}" class="inline-input" min="0" max="100" step="1" value="${area.weight}"></td>
       <td>
         <input type="number" id="max-perf-${i}" class="inline-input" min="0.1" step="0.1" value="${area.max}">
-        <button type="button" class="text-btn sync-btn sync-perf-max" data-idx="${i}">반영비율에 맞추기</button>
+        <button type="button" class="text-btn sync-btn sync-perf-max" data-idx="${i}">반영 비율에 맞추기</button>
       </td>
     </tr>`;
   }
@@ -195,7 +195,7 @@ export function initBasic(app) {
   root.innerHTML = `
     <section class="card">
       <h2>요소별 반영 비율 · 만점</h2>
-      <p class="notice">환산점 = 분할점수 × (반영비율 ÷ 만점). 수행평가는 기본적으로 영역별 만점 = 반영비율입니다.</p>
+      <p class="notice">환산점 = 분할점수 × (반영 비율 ÷ 만점). 수행평가는 기본적으로 영역별 만점 = 반영 비율입니다.</p>
       <div class="table-wrap">
         <table class="data-table config-table">
           <thead>
@@ -211,11 +211,11 @@ export function initBasic(app) {
       <section class="card component-card">
         <div class="card-head-row">
           <h2>정기시험1 분할점수</h2>
-          <button type="button" class="secondary-btn small-btn" id="load-exam1-session">도우미 결과 불러오기</button>
+          <button type="button" class="secondary-btn small-btn" id="load-exam1-session">정기시험별 산출 결과에서 불러오기</button>
         </div>
         <p class="notice exam-source-notice">
           산출 결과를 직접 입력하시거나,
-          <button type="button" class="link-btn tab-shortcut" data-tab="exam-helper" data-exam="mid1">정기시험별 추정분할점수 산출</button>
+          <button type="button" class="link-btn tab-shortcut" data-tab="exam-helper" data-exam="mid1">2. 정기시험별 추정분할점수 산출</button>
           탭을 활용하세요.
         </p>
         <p class="component-max-hint" id="hint-exam1">만점 100점 척도</p>
@@ -225,15 +225,15 @@ export function initBasic(app) {
         <div class="card-head-row">
           <h2>정기시험2 분할점수</h2>
           <div class="btn-group">
-            <button type="button" class="secondary-btn small-btn" id="load-exam2-helper">도우미 결과 불러오기</button>
-            <button type="button" class="secondary-btn small-btn" id="load-exam2-semester">초안 산출 결과 불러오기</button>
+            <button type="button" class="secondary-btn small-btn" id="load-exam2-helper">정기시험별 산출 결과에서 불러오기</button>
+            <button type="button" class="secondary-btn small-btn" id="load-exam2-semester">학기말 초안 산출 결과에서 불러오기</button>
           </div>
         </div>
         <p class="notice exam-source-notice">
           산출 결과를 직접 입력하시거나,
-          <button type="button" class="link-btn tab-shortcut" data-tab="exam-helper" data-exam="mid2">정기시험별 추정분할점수 산출</button>
+          <button type="button" class="link-btn tab-shortcut" data-tab="exam-helper" data-exam="mid2">2. 정기시험별 추정분할점수 산출</button>
           ·
-          <button type="button" class="link-btn tab-shortcut" data-tab="exam2-tuner">학생 성적 분석 및 최종추정분할점수 초안 산출</button>
+          <button type="button" class="link-btn tab-shortcut" data-tab="exam2-tuner">3. 학생 성적 분석 및 학기말 초안 산출</button>
           탭을 활용하세요.
         </p>
         <p class="component-max-hint" id="hint-exam2">만점 100점 척도</p>
@@ -244,13 +244,13 @@ export function initBasic(app) {
     <div id="perf-cards-grid" class="components-grid"></div>
 
     <section class="card">
-      <button type="button" id="calc-basic" class="primary-btn">최종 분할점수 산출</button>
+      <button type="button" id="calc-basic" class="primary-btn">학기말 분할점수 산출</button>
       <p id="basic-error" class="error-msg" hidden></p>
     </section>
 
     <section id="basic-result" class="card" hidden>
       <div class="card-head-row">
-        <h2>최종 추정 분할점수</h2>
+        <h2>학기말 추정 분할점수</h2>
         <button type="button" id="export-basic-excel" class="secondary-btn small-btn">엑셀로 보내기</button>
       </div>
       <div class="table-wrap">
@@ -465,7 +465,7 @@ function buildResultTableHead(config) {
       <th>정기1</th><th>정기1환산</th>
       <th>정기2</th><th>정기2환산</th>
       ${perfCols.map((l) => `<th>${l}</th><th>${l}환산</th>`).join("")}
-      <th>최종</th>
+      <th>학기말 점수</th>
     </tr>`;
 }
 
@@ -489,7 +489,7 @@ function calculate(app) {
   const finalCutoffs = combineCutoffs(exam1, exam2, perfAreas, config, mode);
   const finalIssues = validateCutoffs(finalCutoffs, mode, 100);
   if (finalIssues.length) {
-    errEl.textContent = `최종 분할점수가 단조 감소하지 않습니다: ${finalIssues[0]}`;
+    errEl.textContent = `학기말 분할점수가 단조 감소하지 않습니다: ${finalIssues[0]}`;
     errEl.hidden = false;
     resultEl.hidden = true;
     return;
@@ -537,7 +537,7 @@ function calculate(app) {
 
 function exportBasic(app) {
   if (!app.finalCutoffs) {
-    alert("먼저 최종 분할점수를 산출해 주세요.");
+    alert("먼저 학기말 분할점수를 산출해 주세요.");
     return;
   }
   try {
@@ -550,7 +550,7 @@ function exportBasic(app) {
       app.gradeMode
     );
     const now = new Date();
-    const fname = `추정분할점수_${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}.xlsx`;
+    const fname = `추정_분할점수_${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}.xlsx`;
     exportToExcel(fname, [{ name: "기본산출", rows }]);
   } catch (e) {
     alert(e.message);
@@ -561,7 +561,7 @@ function exportBasic(app) {
 function loadSession(exam, prefix, app) {
   const cutoffs = pullExamCutoffFromSession(exam);
   if (!cutoffs) {
-    alert("저장된 결과가 없습니다. 정기시험별 추정분할점수 산출 탭에서 먼저 적용해 주세요.");
+    alert("저장된 결과가 없습니다. 2. 정기시험별 추정분할점수 산출 탭에서 먼저 적용해 주세요.");
     return;
   }
   writeComponentCutoffs(prefix, cutoffs, app.gradeMode);
@@ -574,7 +574,7 @@ function loadExam2FromHelper(app) {
     pullExamCutoffFromSession("mid2", "helper") || pullExamCutoffFromSession("mid2");
   if (!cutoffs) {
     alert(
-      "저장된 도우미 결과가 없습니다. 정기시험별 추정분할점수 산출 탭에서 정기시험2를 선택하고 「기본 산출에 적용」을 먼저 실행해 주세요."
+      "저장된 결과가 없습니다. 2. 정기시험별 추정분할점수 산출 탭에서 정기시험2를 선택하고 「기본 산출에 적용」을 먼저 실행해 주세요."
     );
     return;
   }
@@ -589,7 +589,7 @@ function loadExam2FromSemester(app) {
     app.semesterState?.lastResult?.exam2Cutoffs;
   if (!cutoffs) {
     alert(
-      "저장된 초안이 없습니다. 학생 성적 분석 및 최종추정분할점수 초안 산출 탭에서 정기시험2 초안을 산출한 뒤 「기본 산출에 적용」을 실행해 주세요."
+      "저장된 초안이 없습니다. 3. 학생 성적 분석 및 학기말 초안 산출 탭에서 정기시험2 초안을 산출한 뒤 「기본 산출에 적용」을 실행해 주세요."
     );
     return;
   }
@@ -691,7 +691,7 @@ export function syncSemesterCutoffsFromBasic(app) {
   const pf = getPerfCutoffsForApp(app);
 
   if (!e1 || e1.AB == null) {
-    return { ok: false, error: "기본 탭에서 정기1 분할점수를 입력해 주세요." };
+    return { ok: false, error: "1. 기본 탭에서 정기1 분할점수를 입력해 주세요." };
   }
 
   app.semesterState = app.semesterState || {};

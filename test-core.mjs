@@ -34,7 +34,7 @@ import { predictStudentGrade } from "./js/core/student.js";
 import {
   GRADE_MODE_FIVE,
   GRADE_MODE_SIX,
-  snapCutoffsMonotonic,
+  roundCutoffsMonotonic,
   normalizeFinalCutoffs,
   MIN_PASS_RATE_PERCENT,
   passRateGradeColumnsForMode,
@@ -84,13 +84,25 @@ const sixMatrix = passRatesToMatrix(sixRates, GRADE_MODE_SIX);
 console.assert(sixMatrix.E && sixMatrix.E.하 > 0, "six mode E column should have rates");
 console.assert(sixMatrix.미도달 == null, "six mode pass matrix should not have 미도달 column");
 
+const roundedFive = roundCutoffsMonotonic(
+  { AB: 84.567, BC: 69.234, CD: 54.891, DE: 39.456 },
+  GRADE_MODE_FIVE,
+  100
+);
+console.assert(roundedFive.AB === 84.57, `roundCutoffsMonotonic AB expected 84.57 got ${roundedFive.AB}`);
+console.assert(roundedFive.AB > roundedFive.BC, "roundCutoffsMonotonic should preserve monotonic order");
+
 const target = { ...final, AB: 88 };
 const { cutoffs: exam2Solved } = solveExam2Cutoffs(target, exam1, perfAreas, config, GRADE_MODE_FIVE);
 for (const k of Object.keys(exam2Solved)) {
-  console.assert(exam2Solved[k] % 5 === 0, `exam2 ${k} expected multiple of 5 got ${exam2Solved[k]}`);
+  console.assert(Number.isFinite(exam2Solved[k]), `exam2 ${k} expected finite got ${exam2Solved[k]}`);
+  console.assert(
+    Math.abs(exam2Solved[k] * 100 - Math.round(exam2Solved[k] * 100)) < 1e-9,
+    `exam2 ${k} expected 2 decimal places got ${exam2Solved[k]}`
+  );
 }
 const after = combineCutoffs(exam1, exam2Solved, perfAreas, config, GRADE_MODE_FIVE);
-console.assert(after.AB === 89, `tuned AB expected 89 got ${after.AB}`);
+console.assert(after.AB === target.AB, `tuned AB expected ${target.AB} got ${after.AB}`);
 
 const captureConfig = normalizeComponentConfig({
   exam1: { weight: 35, max: 100 },

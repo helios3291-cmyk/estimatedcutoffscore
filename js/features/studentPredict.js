@@ -53,7 +53,7 @@ function fillCutoffInputs(cutoffs, mode) {
   return normalized;
 }
 
-/** 기본 산출 탭의 최종 분할점수 → 학생 예측 입력란 동기화 */
+/** 1. 기본 탭의 학기말 분할점수 → 학생 예측 입력란 동기화 */
 export function syncFinalCutoffsFromBasic(app) {
   if (!app.finalCutoffs) return false;
   const normalized = fillCutoffInputs(app.finalCutoffs, app.gradeMode);
@@ -78,8 +78,8 @@ export function initStudentPredict(app) {
     </section>
 
     <section class="card">
-      <h2>최종 분할점수 (판정 기준)</h2>
-      <p class="notice">기본 탭에서 「최종 분할점수 산출」 시 아래 값이 자동 반영됩니다 (정수).</p>
+      <h2>학기말 분할점수 (판정 기준)</h2>
+      <p class="notice">1. 기본 탭에서 「학기말 분할점수 산출」 시 아래 값이 자동 반영됩니다 (정수).</p>
       <div id="student-cutoffs" class="boundaries-grid"></div>
       <button type="button" id="calc-student" class="primary-btn">성취도 예측</button>
       <p id="student-error" class="error-msg" hidden></p>
@@ -90,7 +90,7 @@ export function initStudentPredict(app) {
       <div class="prediction-hero">
         <div class="prediction-grade" id="pred-grade">-</div>
         <div class="prediction-detail">
-          <p>최종 점수: <strong id="pred-final">-</strong></p>
+          <p>학기말 점수: <strong id="pred-final">-</strong></p>
           <p id="pred-margin"></p>
         </div>
       </div>
@@ -151,7 +151,7 @@ export function initStudentPredict(app) {
     const resultEl = document.getElementById("student-result");
 
     if (!app.finalCutoffs) {
-      errEl.textContent = "기본 탭에서 최종 분할점수를 먼저 산출해 주세요.";
+      errEl.textContent = "1. 기본 탭에서 학기말 분할점수를 먼저 산출해 주세요.";
       errEl.hidden = false;
       resultEl.hidden = true;
       return;

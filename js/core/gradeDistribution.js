@@ -136,7 +136,7 @@ export function parseTargetRatios(inputs, mode) {
 function finalCutoffsFromTargetRatios(finalScores, ratios, mode) {
   const sorted = [...finalScores].filter(Number.isFinite).sort((a, b) => b - a);
   const n = sorted.length;
-  if (!n) return { cutoffs: null, error: "최종 점수를 계산할 학생이 없습니다." };
+  if (!n) return { cutoffs: null, error: "학기말 점수를 계산할 학생이 없습니다." };
 
   const grades = gradeListForMode(mode);
   const counts = {};

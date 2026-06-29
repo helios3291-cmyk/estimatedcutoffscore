@@ -3,7 +3,7 @@ import {
   getBoundaryKeys,
   validateCutoffs,
   roundInt,
-  snapCutoffsMonotonic,
+  roundCutoffsMonotonic,
   BOUNDARY_LABELS,
 } from "./grades.js";
 
@@ -165,11 +165,11 @@ export function solveExam2Cutoffs(finalTarget, exam1, perfCutoffs, config, mode)
 
     if (raw < 0) {
       issues.push(
-        `목표 최종 ${BOUNDARY_LABELS[key]}(${finalTarget[key]})는 정기1+수행 환산점 합이 이미 ${round1(other)}점입니다. 목표를 올리거나 확정 분할점수를 낮춰 주세요.`
+        `목표 학기말 ${BOUNDARY_LABELS[key]}(${finalTarget[key]})는 정기1+수행 환산점 합이 이미 ${round1(other)}점입니다. 목표를 올리거나 확정 분할점수를 낮춰 주세요.`
       );
     } else if (raw > c2.max) {
       issues.push(
-        `목표 최종 ${BOUNDARY_LABELS[key]}(${finalTarget[key]})는 정기2 만점(${c2.max})을 초과하는 역산값(${round1(raw)})입니다. 목표를 낮추거나 확정 분할점수를 조정해 주세요.`
+        `목표 학기말 ${BOUNDARY_LABELS[key]}(${finalTarget[key]})는 정기2 만점(${c2.max})을 초과하는 역산값(${round1(raw)})입니다. 목표를 낮추거나 확정 분할점수를 조정해 주세요.`
       );
     }
   }
@@ -178,25 +178,13 @@ export function solveExam2Cutoffs(finalTarget, exam1, perfCutoffs, config, mode)
     return { cutoffs: null, issues, rawValues };
   }
 
-  const result = snapCutoffsMonotonic(rawValues, mode, c2.max);
+  const result = roundCutoffsMonotonic(rawValues, mode, c2.max);
   const monoIssues = validateCutoffs(result, mode, c2.max);
 
   if (monoIssues.length) {
-    const vals = keys.map((k) => rawValues[k]).filter(Number.isFinite);
-    if (vals.length >= 2) {
-      const spread = Math.max(...vals) - Math.min(...vals);
-      if (spread < 5) {
-        issues.push(
-          "역산된 정기2 경계 간격이 5점 미만입니다. 학생 점수 분산이 작거나 목표 비율이 정기1+수행 환산과 비슷하면 5점 단위 분할점수를 만들기 어렵습니다."
-        );
-      } else {
-        issues.push(
-          "정기2 분할점수는 5점 단위로 설정됩니다. 목표 비율을 조정해 A/B·B/C 등 경계 간격이 5점 이상 벌어지도록 해 주세요."
-        );
-      }
-    } else {
-      issues.push("정기2 분할점수는 5점 단위로 설정됩니다. 목표 비율을 조정해 주세요.");
-    }
+    issues.push(
+      "역산된 정기2 경계가 단조 감소하지 않습니다. 목표 비율을 조정해 주세요."
+    );
     return { cutoffs: null, issues, rawValues };
   }
 
@@ -249,7 +237,7 @@ export function validateComponentConfig(config) {
   }
 
   if (c.exam2.weight === 0) {
-    issues.push("정기시험2 반영 비율이 0%이면 정기시험2 초안 도우미 기능을 사용할 수 없습니다.");
+    issues.push("정기시험2 반영 비율이 0%이면 3. 학기말 초안 산출 기능을 사용할 수 없습니다.");
   }
 
   return issues;
