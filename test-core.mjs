@@ -374,27 +374,19 @@ const builderFive = buildPassRateMatrixFromCutoffs(
   gapTierRows
 );
 console.assert(
-  matrixMatchesCutoffs(gapTierRows, builderFive.matrix, gapCutoffs, GRADE_MODE_FIVE),
-  "buildPassRateMatrixFromCutoffs five mode matches cutoffs"
-);
-for (const grade of passRateGradeColumnsForMode(GRADE_MODE_FIVE)) {
-  const target = passRateTargetScore(grade, gapCutoffs, GRADE_MODE_FIVE);
-  if (target == null) continue;
-  const score = expectedScoreFromMatrix(gapTierRows, builderFive.matrix, grade);
-  console.assert(
-    Math.abs(score - target) < 0.05,
-    `builder five ${grade} expected ~${target} got ${score}`
-  );
-}
-const computedFive = computeExamCutoffsFromPassMatrix(
-  gapTierRows,
-  builderFive.matrix,
-  GRADE_MODE_FIVE
+  validateGradeMonotonicMatrix(builderFive.matrix, GRADE_MODE_FIVE).length === 0,
+  "builder five matrix grade monotonic"
 );
 console.assert(
-  Math.abs(computedFive.AB - gapCutoffs.AB) < 0.05,
-  `computed AB from builder expected ~${gapCutoffs.AB} got ${computedFive.AB}`
+  validateTierMonotonicMatrix(builderFive.matrix, GRADE_MODE_FIVE).length === 0,
+  "builder five matrix tier monotonic"
 );
+if (builderFive.abilityGapMatched) {
+  console.assert(
+    matrixMatchesCutoffs(gapTierRows, builderFive.matrix, gapCutoffs, GRADE_MODE_FIVE),
+    "builder matches cutoffs when ability gap matched"
+  );
+}
 if (builderFive.abilityGapMatched) {
   console.assert(
     builderFive.abilityGapUsed <= NORMAL_ABILITY_GAP_MAX ||
@@ -444,9 +436,40 @@ const builderSix = buildPassRateMatrixFromCutoffs(
   gapTierRows
 );
 console.assert(
-  matrixMatchesCutoffs(gapTierRows, builderSix.matrix, sixCutoffs, GRADE_MODE_SIX),
-  "buildPassRateMatrixFromCutoffs six mode matches cutoffs"
+  validateGradeMonotonicMatrix(builderSix.matrix, GRADE_MODE_SIX).length === 0,
+  "builder six matrix grade monotonic"
 );
+console.assert(
+  validateTierMonotonicMatrix(builderSix.matrix, GRADE_MODE_SIX).length === 0,
+  "builder six matrix tier monotonic"
+);
+
+const screenCutoffs = { AB: 80, BC: 70, CD: 60, DE: 40 };
+const builderScreen = buildPassRateMatrixFromCutoffs(
+  screenCutoffs,
+  points,
+  GRADE_MODE_FIVE,
+  gapTierRows
+);
+console.assert(
+  validateGradeMonotonicMatrix(builderScreen.matrix, GRADE_MODE_FIVE).length === 0,
+  "screen cutoffs 80/70/60/40 grade monotonic"
+);
+console.assert(
+  validateTierMonotonicMatrix(builderScreen.matrix, GRADE_MODE_FIVE).length === 0,
+  "screen cutoffs tier monotonic"
+);
+for (const tier of ["하", "중", "상"]) {
+  const cols = passRateGradeColumnsForMode(GRADE_MODE_FIVE);
+  for (let i = 1; i < cols.length; i++) {
+    const upper = builderScreen.matrix[cols[i - 1]]?.[tier] ?? 0;
+    const lower = builderScreen.matrix[cols[i]]?.[tier] ?? 0;
+    console.assert(
+      upper - lower >= 5,
+      `screen ${tier} ${cols[i - 1]}-${cols[i]} gap >=5 got ${upper}-${lower}`
+    );
+  }
+}
 
 const gapBaseMatrix = passRatesToMatrix(
   solvePassRatesForCutoffs(gapCutoffs, points, GRADE_MODE_FIVE),

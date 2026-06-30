@@ -195,7 +195,7 @@ export function initBasic(app) {
   root.innerHTML = `
     <section class="card">
       <h2>요소별 반영 비율 · 만점</h2>
-      <p class="notice">환산점 = 분할점수 × (반영 비율 ÷ 만점). 수행평가는 기본적으로 영역별 만점 = 반영 비율입니다.</p>
+      <p class="notice">환산점 = 원점수 × (반영 비율 ÷ 만점). 수행평가는 기본적으로 영역별 만점 = 반영 비율입니다.</p>
       <div class="table-wrap">
         <table class="data-table config-table">
           <thead>

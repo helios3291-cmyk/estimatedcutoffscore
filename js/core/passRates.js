@@ -104,7 +104,7 @@ export function applyAbilityGapWithCutoffs(matrix, tierRows, cutoffs, mode) {
       candidate = enforceGradeMonotonicMatrix(candidate, mode);
     }
     candidate = enforceAbilityGapMatrix(candidate, mode, maxGap);
-    candidate = enforceTierMonotonicMatrix(candidate, mode);
+    candidate = enforcePassRateMatrix(candidate, mode);
     fallback = candidate;
     if (matrixMatchesCutoffs(tierRows, candidate, cutoffs, mode)) {
       return { matrix: candidate, maxGapUsed: maxGap, matched: true };
@@ -295,40 +295,29 @@ export function buildPassRateMatrixFromCutoffs(cutoffs, points, mode, tierRows =
   for (let pass = 0; pass < 3; pass++) {
     matrix = enforceTierMonotonicMatrix(matrix, mode);
     matrix = recalibrateAllColumns(matrix, points, cutoffs, mode);
-    matrix = enforceGradeMonotonicMatrix(matrix, mode);
-    matrix = recalibrateAllColumns(matrix, points, cutoffs, mode);
+    matrix = enforcePassRateMatrix(matrix, mode);
   }
 
   const gapResult = applyAbilityGapWithCutoffs(matrix, rows, cutoffs, mode);
-  let resultMatrix = gapResult.matched ? gapResult.matrix : matrix;
-  let abilityGapUsed = gapResult.matched ? gapResult.maxGapUsed : null;
+  let resultMatrix = enforcePassRateMatrix(gapResult.matrix, mode);
+  let abilityGapUsed = gapResult.maxGapUsed;
   let abilityGapMatched = gapResult.matched;
 
   for (const hardMin of HARD_TIER_MIN_CANDIDATES) {
     let candidate = setHardTierMinimum(resultMatrix, mode, hardMin);
-    for (let pass = 0; pass < 2; pass++) {
-      candidate = enforceTierMonotonicMatrix(candidate, mode);
-      candidate = enforceGradeMonotonicMatrix(candidate, mode);
-    }
+    candidate = enforcePassRateMatrix(candidate, mode);
     const gapRetry = applyAbilityGapWithCutoffs(candidate, rows, cutoffs, mode);
-    if (gapRetry.matched) {
-      resultMatrix = gapRetry.matrix;
-      abilityGapUsed = gapRetry.maxGapUsed;
-      abilityGapMatched = true;
-      logPassRateBuildResult(resultMatrix, mode, gapRetry.maxGapUsed, hardMin);
-      break;
-    }
-    if (matrixMatchesCutoffs(rows, candidate, cutoffs, mode)) {
-      resultMatrix = candidate;
-      abilityGapMatched = true;
-      logPassRateBuildResult(resultMatrix, mode, abilityGapUsed, hardMin);
+    candidate = enforcePassRateMatrix(gapRetry.matrix, mode);
+    resultMatrix = candidate;
+    abilityGapUsed = gapRetry.maxGapUsed;
+    abilityGapMatched = gapRetry.matched;
+    logPassRateBuildResult(resultMatrix, mode, gapRetry.maxGapUsed, hardMin);
+    if (achievedHardTierMin(resultMatrix, mode) >= hardMin) {
       break;
     }
   }
 
-  if (!abilityGapMatched) {
-    logPassRateBuildResult(resultMatrix, mode, abilityGapUsed, achievedHardTierMin(resultMatrix, mode));
-  }
+  resultMatrix = enforcePassRateMatrix(resultMatrix, mode);
 
   return {
     matrix: resultMatrix,
@@ -356,7 +345,7 @@ function setHardTierMinimum(matrix, mode, minRate) {
   if (!next[bottom]) next[bottom] = {};
   const floor = snapRatePercent(minRate, HARD_TIER_RELAXED_MIN_PASS_RATE);
   next[bottom].상 = Math.max(next[bottom].상 ?? 0, floor);
-  return enforceTierMonotonicMatrix(next, mode);
+  return enforcePassRateMatrix(next, mode);
 }
 
 function achievedHardTierMin(matrix, mode) {
@@ -499,22 +488,22 @@ export function passRatesToMatrix(passRates, mode) {
   return enforcePassRateMatrix(matrix, mode);
 }
 
-/** 같은 난이도에서 A > B > C > D > E (인접 등급 간 최소 5%p) */
+/** 같은 난이도에서 A > B > C > D > E (인접 등급 간 최소 5%p) — 상위 등급부터 상한 적용 */
 function enforceGradeRatesForTier(gradeRates, gradeCols) {
   const out = { ...gradeRates };
-  const ascending = [...gradeCols].reverse();
-  let prev = MIN_PASS_RATE_PERCENT;
+  let prevCap = 100;
 
-  for (const grade of ascending) {
+  for (const grade of gradeCols) {
     let val = snapRatePercent(out[grade] ?? 0);
-    if (grade === ascending[0]) {
-      val = Math.max(MIN_PASS_RATE_PERCENT, val);
+    if (grade === gradeCols[0]) {
+      val = Math.min(prevCap, val);
     } else {
-      val = Math.max(prev + GRADE_MONOTONIC_GAP, val);
+      val = Math.min(prevCap - GRADE_MONOTONIC_GAP, val);
     }
-    val = Math.min(100, val);
+    val = Math.max(MIN_PASS_RATE_PERCENT, val);
+    val = snapRatePercent(val);
     out[grade] = val;
-    prev = val;
+    prevCap = val;
   }
 
   return out;
