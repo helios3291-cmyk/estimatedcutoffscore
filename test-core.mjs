@@ -18,6 +18,7 @@ import {
   buildPassRateMatrixFromCutoffs,
   buildTierRowsBasic,
   expectedScoreFromMatrix,
+  expectedScoresByGrade,
   computeExamCutoffsFromPassMatrix,
   matrixMatchesCutoffs,
   collectPassRateWarnings,
@@ -458,6 +459,15 @@ console.assert(
 console.assert(
   validateTierMonotonicMatrix(builderScreen.matrix, GRADE_MODE_FIVE).length === 0,
   "screen cutoffs tier monotonic"
+);
+console.assert(
+  builderScreen.cutoffErrorSum <= 15,
+  `screen cutoffs L1 error expected <=15 got ${builderScreen.cutoffErrorSum}`
+);
+const screenExp = expectedScoresByGrade(gapTierRows, builderScreen.matrix, GRADE_MODE_FIVE);
+console.assert(
+  Math.abs(screenExp.B - 70) < 0.05 && Math.abs(screenExp.C - 60) < 0.05,
+  `screen B/C should match targets got B=${screenExp.B} C=${screenExp.C}`
 );
 for (const tier of ["하", "중", "상"]) {
   const cols = passRateGradeColumnsForMode(GRADE_MODE_FIVE);

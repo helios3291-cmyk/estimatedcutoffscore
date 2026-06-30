@@ -273,9 +273,73 @@ function recalibrateAllColumns(matrix, points, cutoffs, mode) {
   return next;
 }
 
-/** exam-helper 제안 계산 전용 — 목표 분할점수에 맞춘 통과율 matrix */
-export function buildPassRateMatrixFromCutoffs(cutoffs, points, mode, tierRows = null) {
-  const rows = tierRows || buildTierRowsBasic(points);
+const SOLVER_TIER_KEYS = ["하", "중", "상"];
+const GRADE_STEP_OFFSETS = { A: 0, B: 5, C: 10, D: 15, E: 20 };
+const SOLVER_GAP_CAPS = [15, 20, 25, 30, 999];
+
+function matrixFromATierRates(aRates, mode) {
+  const cols = passRateGradeColumnsForMode(mode);
+  const matrix = {};
+  for (const grade of cols) {
+    const off = GRADE_STEP_OFFSETS[grade] ?? 0;
+    matrix[grade] = {
+      하: (aRates.하 ?? 0) - off,
+      중: (aRates.중 ?? 0) - off,
+      상: (aRates.상 ?? 0) - off,
+    };
+  }
+  return matrix;
+}
+
+function projectFeasibleMatrix(matrix, mode, maxAbilityGap) {
+  let next = cloneMatrix(matrix);
+  const cap = Number.isFinite(maxAbilityGap) ? maxAbilityGap : 999;
+
+  for (let pass = 0; pass < 6; pass++) {
+    if (cap < 999) {
+      next = enforceAbilityGapMatrix(next, mode, cap);
+    }
+    next = enforcePassRateMatrix(next, mode);
+  }
+
+  return next;
+}
+
+function cutoffErrorSum(matrix, tierRows, cutoffs, mode) {
+  const expected = expectedScoresByGrade(tierRows, matrix, mode);
+  const grades = passRateGradeColumnsForMode(mode);
+  let sum = 0;
+
+  for (const grade of grades) {
+    const target = passRateTargetScore(grade, cutoffs, mode);
+    if (target == null) continue;
+    sum += Math.abs((expected[grade] ?? 0) - target);
+  }
+
+  return sum;
+}
+
+function passRateObjective(matrix, tierRows, cutoffs, mode) {
+  let score = cutoffErrorSum(matrix, tierRows, cutoffs, mode);
+  const cols = passRateGradeColumnsForMode(mode);
+  const bottom = cols[cols.length - 1];
+
+  for (const tier of TIER_ORDER) {
+    const gap = abilityGapForTier(matrix, tier, cols);
+    if (gap > NORMAL_ABILITY_GAP_MAX) {
+      score += (gap - NORMAL_ABILITY_GAP_MAX) * 0.35;
+    }
+  }
+
+  const hardRate = matrix[bottom]?.상 ?? 0;
+  if (hardRate < HARD_TIER_MIN_PASS_RATE) {
+    score += (HARD_TIER_MIN_PASS_RATE - hardRate) * 0.35;
+  }
+
+  return score;
+}
+
+function seedFromColumnCalibrate(cutoffs, points, mode) {
   let matrix = {};
 
   for (const boundary of getBoundaryKeys(mode)) {
@@ -292,38 +356,135 @@ export function buildPassRateMatrixFromCutoffs(cutoffs, points, mode, tierRows =
     }
   }
 
-  for (let pass = 0; pass < 3; pass++) {
-    matrix = enforceTierMonotonicMatrix(matrix, mode);
-    matrix = recalibrateAllColumns(matrix, points, cutoffs, mode);
-    matrix = enforcePassRateMatrix(matrix, mode);
+  return matrix;
+}
+
+function collectMinimalChainSeeds(mode) {
+  const seeds = [];
+  for (let aH = 30; aH <= 100; aH += 5) {
+    for (let aM = 20; aM <= aH - GRADE_MONOTONIC_GAP; aM += 5) {
+      for (let aS = HARD_TIER_RELAXED_MIN_PASS_RATE + 20; aS <= aM - GRADE_MONOTONIC_GAP; aS += 5) {
+        seeds.push(matrixFromATierRates({ 하: aH, 중: aM, 상: aS }, mode));
+      }
+    }
+  }
+  return seeds;
+}
+
+function localSearchPassRates(initial, tierRows, cutoffs, mode, maxAbilityGap, maxIter = 2500) {
+  const cols = passRateGradeColumnsForMode(mode);
+  let best = projectFeasibleMatrix(initial, mode, maxAbilityGap);
+  let bestObj = passRateObjective(best, tierRows, cutoffs, mode);
+  let current = cloneMatrix(best);
+
+  for (let iter = 0; iter < maxIter; iter++) {
+    let improved = false;
+
+    for (const grade of cols) {
+      for (const tier of SOLVER_TIER_KEYS) {
+        for (const delta of [-GRADE_MONOTONIC_GAP, GRADE_MONOTONIC_GAP]) {
+          const trialRaw = cloneMatrix(current);
+          if (!trialRaw[grade]) trialRaw[grade] = {};
+          trialRaw[grade][tier] = (trialRaw[grade][tier] ?? 0) + delta;
+          const trial = projectFeasibleMatrix(trialRaw, mode, maxAbilityGap);
+          const obj = passRateObjective(trial, tierRows, cutoffs, mode);
+
+          if (obj < bestObj) {
+            bestObj = obj;
+            best = trial;
+            current = trial;
+            improved = true;
+          }
+        }
+      }
+    }
+
+    if (!improved) break;
   }
 
-  const gapResult = applyAbilityGapWithCutoffs(matrix, rows, cutoffs, mode);
-  let resultMatrix = enforcePassRateMatrix(gapResult.matrix, mode);
-  let abilityGapUsed = gapResult.maxGapUsed;
-  let abilityGapMatched = gapResult.matched;
+  return { matrix: best, objective: bestObj };
+}
 
-  for (const hardMin of HARD_TIER_MIN_CANDIDATES) {
-    let candidate = setHardTierMinimum(resultMatrix, mode, hardMin);
-    candidate = enforcePassRateMatrix(candidate, mode);
-    const gapRetry = applyAbilityGapWithCutoffs(candidate, rows, cutoffs, mode);
-    candidate = enforcePassRateMatrix(gapRetry.matrix, mode);
-    resultMatrix = candidate;
-    abilityGapUsed = gapRetry.maxGapUsed;
-    abilityGapMatched = gapRetry.matched;
-    logPassRateBuildResult(resultMatrix, mode, gapRetry.maxGapUsed, hardMin);
-    if (achievedHardTierMin(resultMatrix, mode) >= hardMin) {
-      break;
+function optimizePassRateMatrix(cutoffs, points, mode, tierRows, maxAbilityGap) {
+  const seeds = [seedFromColumnCalibrate(cutoffs, points, mode)];
+  const chainSeeds = collectMinimalChainSeeds(mode);
+
+  const ranked = chainSeeds
+    .map((raw) => {
+      const matrix = projectFeasibleMatrix(raw, mode, maxAbilityGap);
+      return { raw, objective: passRateObjective(matrix, tierRows, cutoffs, mode) };
+    })
+    .sort((a, b) => a.objective - b.objective)
+    .slice(0, 8);
+
+  for (const entry of ranked) {
+    seeds.push(entry.raw);
+  }
+
+  let best = null;
+  let bestObj = Infinity;
+
+  for (const raw of seeds) {
+    const result = localSearchPassRates(raw, tierRows, cutoffs, mode, maxAbilityGap);
+    if (result.objective < bestObj) {
+      bestObj = result.objective;
+      best = result.matrix;
     }
   }
 
-  resultMatrix = enforcePassRateMatrix(resultMatrix, mode);
+  return { matrix: best, objective: bestObj };
+}
+
+function maxAbilityGapUsed(matrix, mode) {
+  const cols = passRateGradeColumnsForMode(mode);
+  let maxGap = 0;
+  for (const tier of TIER_ORDER) {
+    maxGap = Math.max(maxGap, abilityGapForTier(matrix, tier, cols));
+  }
+  return maxGap;
+}
+
+/** exam-helper 제안 계산 — 규칙 feasible + 목표 분할점수 L1 오차 최소화 */
+export function buildPassRateMatrixFromCutoffs(cutoffs, points, mode, tierRows = null) {
+  const rows = tierRows || buildTierRowsBasic(points);
+  let resultMatrix = null;
+  let bestObj = Infinity;
+  let chosenGapCap = 30;
+
+  for (const maxGap of SOLVER_GAP_CAPS) {
+    const { matrix, objective } = optimizePassRateMatrix(cutoffs, points, mode, rows, maxGap);
+    if (objective < bestObj) {
+      bestObj = objective;
+      resultMatrix = matrix;
+      chosenGapCap = maxGap;
+    }
+  }
+
+  if (!resultMatrix) {
+    resultMatrix = projectFeasibleMatrix(seedFromColumnCalibrate(cutoffs, points, mode), mode, 30);
+  }
+
+  for (const hardMin of HARD_TIER_MIN_CANDIDATES) {
+    let candidate = setHardTierMinimum(resultMatrix, mode, hardMin);
+    const refined = localSearchPassRates(candidate, rows, cutoffs, mode, chosenGapCap, 800);
+    if (refined.objective <= bestObj + 0.01) {
+      resultMatrix = refined.matrix;
+      bestObj = refined.objective;
+    }
+    if (achievedHardTierMin(resultMatrix, mode) >= hardMin) break;
+  }
+
+  resultMatrix = projectFeasibleMatrix(resultMatrix, mode, chosenGapCap);
+
+  const abilityGapUsed = maxAbilityGapUsed(resultMatrix, mode);
+  const abilityGapMatched = matrixMatchesCutoffs(rows, resultMatrix, cutoffs, mode);
 
   return {
     matrix: resultMatrix,
     abilityGapUsed,
     abilityGapMatched,
     hardTierMinUsed: achievedHardTierMin(resultMatrix, mode),
+    cutoffErrorSum: cutoffErrorSum(resultMatrix, rows, cutoffs, mode),
   };
 }
 
@@ -355,28 +516,6 @@ function achievedHardTierMin(matrix, mode) {
     if (rate >= min) return min;
   }
   return HARD_TIER_RELAXED_MIN_PASS_RATE;
-}
-
-function logPassRateBuildResult(matrix, mode, maxGap, hardMin) {
-  // #region agent log
-  const bottom = lowestPassRateGrade(mode);
-  fetch("http://127.0.0.1:7458/ingest/43283681-e0a1-40fa-afae-721b1c54a9f6", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "b33a5f" },
-    body: JSON.stringify({
-      sessionId: "b33a5f",
-      location: "passRates.js:buildPassRateMatrixFromCutoffs",
-      message: "pass rate matrix built",
-      data: {
-        maxGap,
-        hardMin,
-        hardTierRate: matrix[bottom]?.상 ?? null,
-      },
-      hypothesisId: "H2",
-      timestamp: Date.now(),
-    }),
-  }).catch(() => {});
-  // #endregion
 }
 
 export function collectPassRateWarnings(matrix, mode) {

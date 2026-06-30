@@ -143,26 +143,6 @@ export function initExamHelper(app) {
       app.helperState.abilityGapUsed = built.abilityGapUsed;
       app.helperState.abilityGapMatched = built.abilityGapMatched;
       app.helperState.hardTierMinUsed = built.hardTierMinUsed;
-      // #region agent log
-      const warnCells = collectPassRateWarnings(matrix, app.gradeMode);
-      fetch("http://127.0.0.1:7458/ingest/43283681-e0a1-40fa-afae-721b1c54a9f6", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "b33a5f" },
-        body: JSON.stringify({
-          sessionId: "b33a5f",
-          location: "examHelper.js:renderPassRateTable",
-          message: "pass rate table built",
-          data: {
-            abilityGapUsed: built.abilityGapUsed,
-            hardTierMinUsed: built.hardTierMinUsed,
-            warningCount: warnCells.length,
-            warnings: warnCells,
-          },
-          hypothesisId: "H2",
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {});
-      // #endregion
     }
 
     app.helperState.passRateMatrix = matrix;
