@@ -22,10 +22,34 @@ import {
 
 const GRADE_MONOTONIC_GAP = 5;
 
-export const PREFERRED_ABILITY_GAPS = [5, 10, 15];
-export const RELAXED_ABILITY_GAPS = [20, 25, 30];
-export const ABILITY_GAP_LIMITS = [...PREFERRED_ABILITY_GAPS, ...RELAXED_ABILITY_GAPS];
+/** 인접 등급 간 최대 통과율 격차 (권장 15%p, 완화 20·25%p) */
+export const ADJACENT_GRADE_GAP_PREFERRED = NORMAL_ABILITY_GAP_MAX;
+export const ADJACENT_GRADE_GAP_RELAXED = [20, 25];
+export const ADJACENT_GAP_CAPS = [15, 20, 25, 999];
+export const PREFERRED_ABILITY_GAPS = [ADJACENT_GRADE_GAP_PREFERRED];
+export const RELAXED_ABILITY_GAPS = ADJACENT_GRADE_GAP_RELAXED;
+export const ABILITY_GAP_LIMITS = [15, 20, 25, 30];
 export const ABILITY_GAP_WARN_THRESHOLD = NORMAL_ABILITY_GAP_MAX;
+
+/** 교사 입력 샘플 기반 내장 프리셋 (하→중→상) */
+export const PASS_RATE_PRESETS = {
+  high: {
+    A: { 하: 95, 중: 85, 상: 80 },
+    B: { 하: 80, 중: 70, 상: 65 },
+    C: { 하: 65, 중: 55, 상: 50 },
+    D: { 하: 50, 중: 40, 상: 35 },
+    E: { 하: 30, 중: 20, 상: 15 },
+  },
+  moderate: {
+    A: { 하: 90, 중: 80, 상: 65 },
+    B: { 하: 75, 중: 65, 상: 55 },
+    C: { 하: 60, 중: 50, 상: 40 },
+    D: { 하: 45, 중: 35, 상: 25 },
+    E: { 하: 30, 중: 20, 상: 15 },
+  },
+};
+
+export const PRESET_LABELS = { high: "높음", moderate: "보통" };
 
 function cloneMatrix(matrix) {
   const next = {};
@@ -35,33 +59,82 @@ function cloneMatrix(matrix) {
   return next;
 }
 
-/** 같은 난이도에서 A(상위) − E(하위) 통과율 격차 */
+/** 같은 난이도에서 인접 등급 간 최대 통과율 격차 */
 export function abilityGapForTier(matrix, tier, gradeCols) {
-  const top = gradeCols[0];
-  const bottom = gradeCols[gradeCols.length - 1];
-  return (matrix[top]?.[tier] ?? 0) - (matrix[bottom]?.[tier] ?? 0);
+  return maxAdjacentGradeGapForTier(matrix, tier, gradeCols);
 }
 
-function compressTierGradeSpread(tierRates, gradeCols, maxGap) {
-  const n = gradeCols.length;
-  const cap = Math.max(maxGap, (n - 1) * GRADE_MONOTONIC_GAP);
-  const bottom = gradeCols[n - 1];
+export function adjacentGradeGap(matrix, upperGrade, lowerGrade, tier) {
+  return (matrix[upperGrade]?.[tier] ?? 0) - (matrix[lowerGrade]?.[tier] ?? 0);
+}
 
-  const bottomVal = snapRatePercent(tierRates[bottom] ?? MIN_PASS_RATE_PERCENT);
-  const topVal = snapRatePercent(Math.min(tierRates[gradeCols[0]] ?? 100, bottomVal + cap));
+export function maxAdjacentGradeGapForTier(matrix, tier, gradeCols) {
+  let maxGap = 0;
+  for (let i = 1; i < gradeCols.length; i++) {
+    maxGap = Math.max(
+      maxGap,
+      adjacentGradeGap(matrix, gradeCols[i - 1], gradeCols[i], tier)
+    );
+  }
+  return maxGap;
+}
 
+export function maxAdjacentGradeGap(matrix, mode) {
+  const cols = passRateGradeColumnsForMode(mode);
+  let maxGap = 0;
+  for (const tier of TIER_ORDER) {
+    maxGap = Math.max(maxGap, maxAdjacentGradeGapForTier(matrix, tier, cols));
+  }
+  return maxGap;
+}
+
+function enforceAdjacentGradeGapsForTier(tierRates, gradeCols, maxGap) {
+  const cap = Math.max(maxGap, GRADE_MONOTONIC_GAP);
   const out = {};
-  out[bottom] = bottomVal;
-  for (let i = n - 2; i >= 0; i--) {
-    const grade = gradeCols[i];
-    const nextGrade = gradeCols[i + 1];
-    out[grade] = snapRatePercent(Math.min(topVal, out[nextGrade] + GRADE_MONOTONIC_GAP));
+  for (const g of gradeCols) {
+    out[g] = snapRatePercent(tierRates[g] ?? MIN_PASS_RATE_PERCENT);
+  }
+
+  for (let round = 0; round < 24; round++) {
+    let changed = false;
+
+    out[gradeCols[0]] = snapRatePercent(Math.min(100, out[gradeCols[0]]));
+
+    for (let i = 1; i < gradeCols.length; i++) {
+      const upper = gradeCols[i - 1];
+      const lower = gradeCols[i];
+      const gap = out[upper] - out[lower];
+
+      if (gap < GRADE_MONOTONIC_GAP) {
+        const nextUpper = snapRatePercent(out[lower] + GRADE_MONOTONIC_GAP);
+        if (nextUpper !== out[upper]) {
+          out[upper] = nextUpper;
+          changed = true;
+        }
+      } else if (gap > cap) {
+        const nextUpper = snapRatePercent(out[lower] + cap);
+        if (nextUpper !== out[upper]) {
+          out[upper] = nextUpper;
+          changed = true;
+        }
+      }
+    }
+
+    for (const g of gradeCols) {
+      const clamped = snapRatePercent(Math.max(MIN_PASS_RATE_PERCENT, Math.min(100, out[g])));
+      if (clamped !== out[g]) {
+        out[g] = clamped;
+        changed = true;
+      }
+    }
+
+    if (!changed) break;
   }
 
   return out;
 }
 
-export function enforceAbilityGapMatrix(matrix, mode, maxGap) {
+export function enforceAdjacentGradeGapMatrix(matrix, mode, maxGap) {
   const cols = passRateGradeColumnsForMode(mode);
   const next = cloneMatrix(matrix);
 
@@ -70,7 +143,7 @@ export function enforceAbilityGapMatrix(matrix, mode, maxGap) {
     for (const g of cols) {
       tierRates[g] = next[g]?.[tier] ?? MIN_PASS_RATE_PERCENT;
     }
-    const fixed = compressTierGradeSpread(tierRates, cols, maxGap);
+    const fixed = enforceAdjacentGradeGapsForTier(tierRates, cols, maxGap);
     for (const g of cols) {
       if (!next[g]) next[g] = {};
       next[g][tier] = fixed[g];
@@ -78,6 +151,11 @@ export function enforceAbilityGapMatrix(matrix, mode, maxGap) {
   }
 
   return next;
+}
+
+/** @deprecated 인접 등급 격차 규칙 — enforceAdjacentGradeGapMatrix 사용 */
+export function enforceAbilityGapMatrix(matrix, mode, maxGap) {
+  return enforceAdjacentGradeGapMatrix(matrix, mode, maxGap);
 }
 
 export function matrixMatchesCutoffs(tierRows, matrix, cutoffs, mode, tolerance = 0.05) {
@@ -103,7 +181,7 @@ export function applyAbilityGapWithCutoffs(matrix, tierRows, cutoffs, mode) {
       candidate = enforceTierMonotonicMatrix(candidate, mode);
       candidate = enforceGradeMonotonicMatrix(candidate, mode);
     }
-    candidate = enforceAbilityGapMatrix(candidate, mode, maxGap);
+    candidate = enforceAdjacentGradeGapMatrix(candidate, mode, maxGap);
     candidate = enforcePassRateMatrix(candidate, mode);
     fallback = candidate;
     if (matrixMatchesCutoffs(tierRows, candidate, cutoffs, mode)) {
@@ -118,7 +196,7 @@ export function tiersExceedingAbilityGap(matrix, mode, threshold = ABILITY_GAP_W
   const cols = passRateGradeColumnsForMode(mode);
   const violations = [];
   for (const tier of TIER_ORDER) {
-    if (abilityGapForTier(matrix, tier, cols) > threshold) {
+    if (maxAdjacentGradeGapForTier(matrix, tier, cols) > threshold) {
       violations.push(tier);
     }
   }
@@ -275,29 +353,72 @@ function recalibrateAllColumns(matrix, points, cutoffs, mode) {
 
 const SOLVER_TIER_KEYS = ["하", "중", "상"];
 const GRADE_STEP_OFFSETS = { A: 0, B: 5, C: 10, D: 15, E: 20 };
-const SOLVER_GAP_CAPS = [15, 20, 25, 30, 999];
 
-function matrixFromATierRates(aRates, mode) {
+function clonePresetMatrix(presetKey, mode) {
+  const preset = PASS_RATE_PRESETS[presetKey];
   const cols = passRateGradeColumnsForMode(mode);
   const matrix = {};
   for (const grade of cols) {
-    const off = GRADE_STEP_OFFSETS[grade] ?? 0;
-    matrix[grade] = {
-      하: (aRates.하 ?? 0) - off,
-      중: (aRates.중 ?? 0) - off,
-      상: (aRates.상 ?? 0) - off,
-    };
+    if (preset?.[grade]) matrix[grade] = { ...preset[grade] };
   }
   return matrix;
 }
 
-function projectFeasibleMatrix(matrix, mode, maxAbilityGap) {
+export function selectPresetKey(tierRows, cutoffs, mode) {
+  let bestKey = "high";
+  let bestErr = Infinity;
+  for (const key of Object.keys(PASS_RATE_PRESETS)) {
+    const matrix = clonePresetMatrix(key, mode);
+    const err = cutoffErrorSum(matrix, tierRows, cutoffs, mode);
+    if (err < bestErr || (err === bestErr && key === "high")) {
+      bestErr = err;
+      bestKey = key;
+    }
+  }
+  return bestKey;
+}
+
+function totalTierPoints(tierRows) {
+  return TIER_ORDER.reduce((sum, tier) => {
+    const row = tierRows.find((r) => r.tier === tier);
+    return sum + (row?.pointsSum ?? 0);
+  }, 0);
+}
+
+export function shiftMatrixColumnsToCutoffs(matrix, tierRows, cutoffs, mode) {
+  const cols = passRateGradeColumnsForMode(mode);
   let next = cloneMatrix(matrix);
-  const cap = Number.isFinite(maxAbilityGap) ? maxAbilityGap : 999;
+  const totalPoints = totalTierPoints(tierRows);
+
+  for (let pass = 0; pass < 3; pass++) {
+    for (const grade of cols) {
+      const target = passRateTargetScore(grade, cutoffs, mode);
+      if (target == null) continue;
+      const current = expectedScoreFromMatrix(tierRows, next, grade);
+      const scoreDelta = round1(target - current);
+      if (Math.abs(scoreDelta) < 0.05) continue;
+
+      const rateShift =
+        totalPoints > 0 ? Math.round(((scoreDelta * 100) / totalPoints) / 5) * 5 : 0;
+      if (rateShift === 0) continue;
+
+      if (!next[grade]) next[grade] = {};
+      for (const tier of TIER_ORDER) {
+        next[grade][tier] = snapRatePercent((next[grade][tier] ?? 0) + rateShift);
+      }
+    }
+  }
+
+  return next;
+}
+
+function projectFeasibleMatrix(matrix, mode, maxAdjacentGap) {
+  let next = cloneMatrix(matrix);
+  const cap = Number.isFinite(maxAdjacentGap) ? maxAdjacentGap : 999;
 
   for (let pass = 0; pass < 6; pass++) {
     if (cap < 999) {
-      next = enforceAbilityGapMatrix(next, mode, cap);
+      next = enforceAdjacentGradeGapMatrix(next, mode, cap);
     }
     next = enforcePassRateMatrix(next, mode);
   }
@@ -325,9 +446,11 @@ function passRateObjective(matrix, tierRows, cutoffs, mode) {
   const bottom = cols[cols.length - 1];
 
   for (const tier of TIER_ORDER) {
-    const gap = abilityGapForTier(matrix, tier, cols);
-    if (gap > NORMAL_ABILITY_GAP_MAX) {
-      score += (gap - NORMAL_ABILITY_GAP_MAX) * 0.35;
+    for (let i = 1; i < cols.length; i++) {
+      const gap = adjacentGradeGap(matrix, cols[i - 1], cols[i], tier);
+      if (gap > NORMAL_ABILITY_GAP_MAX) {
+        score += (gap - NORMAL_ABILITY_GAP_MAX) * 0.35;
+      }
     }
   }
 
@@ -359,21 +482,56 @@ function seedFromColumnCalibrate(cutoffs, points, mode) {
   return matrix;
 }
 
-function collectMinimalChainSeeds(mode) {
-  const seeds = [];
-  for (let aH = 30; aH <= 100; aH += 5) {
-    for (let aM = 20; aM <= aH - GRADE_MONOTONIC_GAP; aM += 5) {
-      for (let aS = HARD_TIER_RELAXED_MIN_PASS_RATE + 20; aS <= aM - GRADE_MONOTONIC_GAP; aS += 5) {
-        seeds.push(matrixFromATierRates({ 하: aH, 중: aM, 상: aS }, mode));
-      }
-    }
+function matrixFromATierRates(aRates, mode) {
+  const cols = passRateGradeColumnsForMode(mode);
+  const matrix = {};
+  for (const grade of cols) {
+    const off = GRADE_STEP_OFFSETS[grade] ?? 0;
+    matrix[grade] = {
+      하: (aRates.하 ?? 0) - off,
+      중: (aRates.중 ?? 0) - off,
+      상: (aRates.상 ?? 0) - off,
+    };
   }
-  return seeds;
+  return matrix;
 }
 
-function localSearchPassRates(initial, tierRows, cutoffs, mode, maxAbilityGap, maxIter = 2500) {
+function seedFromPreset(cutoffs, tierRows, mode) {
+  const presetKey = selectPresetKey(tierRows, cutoffs, mode);
+  const shifted = shiftMatrixColumnsToCutoffs(clonePresetMatrix(presetKey, mode), tierRows, cutoffs, mode);
+  return { matrix: shifted, presetKey };
+}
+
+function optimizePassRateMatrix(initial, tierRows, cutoffs, mode, maxAdjacentGap) {
+  const seeds = [initial, seedFromColumnCalibrate(cutoffs, tierRowsToPoints(tierRows), mode)];
+
+  let best = null;
+  let bestObj = Infinity;
+
+  for (const raw of seeds) {
+    const result = localSearchPassRates(raw, tierRows, cutoffs, mode, maxAdjacentGap);
+    if (result.objective < bestObj) {
+      bestObj = result.objective;
+      best = result.matrix;
+    }
+  }
+
+  return { matrix: best, objective: bestObj };
+}
+
+function tierRowsToPoints(tierRows) {
+  const points = { 상: 0, 중: 0, 하: 0 };
+  for (const row of tierRows) {
+    if (row.tier && Number.isFinite(row.pointsSum)) {
+      points[row.tier] = round1(row.pointsSum);
+    }
+  }
+  return points;
+}
+
+function localSearchPassRates(initial, tierRows, cutoffs, mode, maxAdjacentGap, maxIter = 2500) {
   const cols = passRateGradeColumnsForMode(mode);
-  let best = projectFeasibleMatrix(initial, mode, maxAbilityGap);
+  let best = projectFeasibleMatrix(initial, mode, maxAdjacentGap);
   let bestObj = passRateObjective(best, tierRows, cutoffs, mode);
   let current = cloneMatrix(best);
 
@@ -386,7 +544,7 @@ function localSearchPassRates(initial, tierRows, cutoffs, mode, maxAbilityGap, m
           const trialRaw = cloneMatrix(current);
           if (!trialRaw[grade]) trialRaw[grade] = {};
           trialRaw[grade][tier] = (trialRaw[grade][tier] ?? 0) + delta;
-          const trial = projectFeasibleMatrix(trialRaw, mode, maxAbilityGap);
+          const trial = projectFeasibleMatrix(trialRaw, mode, maxAdjacentGap);
           const obj = passRateObjective(trial, tierRows, cutoffs, mode);
 
           if (obj < bestObj) {
@@ -405,55 +563,18 @@ function localSearchPassRates(initial, tierRows, cutoffs, mode, maxAbilityGap, m
   return { matrix: best, objective: bestObj };
 }
 
-function optimizePassRateMatrix(cutoffs, points, mode, tierRows, maxAbilityGap) {
-  const seeds = [seedFromColumnCalibrate(cutoffs, points, mode)];
-  const chainSeeds = collectMinimalChainSeeds(mode);
-
-  const ranked = chainSeeds
-    .map((raw) => {
-      const matrix = projectFeasibleMatrix(raw, mode, maxAbilityGap);
-      return { raw, objective: passRateObjective(matrix, tierRows, cutoffs, mode) };
-    })
-    .sort((a, b) => a.objective - b.objective)
-    .slice(0, 8);
-
-  for (const entry of ranked) {
-    seeds.push(entry.raw);
-  }
-
-  let best = null;
-  let bestObj = Infinity;
-
-  for (const raw of seeds) {
-    const result = localSearchPassRates(raw, tierRows, cutoffs, mode, maxAbilityGap);
-    if (result.objective < bestObj) {
-      bestObj = result.objective;
-      best = result.matrix;
-    }
-  }
-
-  return { matrix: best, objective: bestObj };
-}
-
-function maxAbilityGapUsed(matrix, mode) {
-  const cols = passRateGradeColumnsForMode(mode);
-  let maxGap = 0;
-  for (const tier of TIER_ORDER) {
-    maxGap = Math.max(maxGap, abilityGapForTier(matrix, tier, cols));
-  }
-  return maxGap;
-}
-
-/** exam-helper 제안 계산 — 규칙 feasible + 목표 분할점수 L1 오차 최소화 */
+/** exam-helper 제안 계산 — 프리셋 기반 + 규칙 feasible + 목표 분할점수 L1 오차 최소화 */
 export function buildPassRateMatrixFromCutoffs(cutoffs, points, mode, tierRows = null) {
   const rows = tierRows || buildTierRowsBasic(points);
+  const { matrix: presetSeed, presetKey } = seedFromPreset(cutoffs, rows, mode);
+
   let resultMatrix = null;
   let bestObj = Infinity;
-  let chosenGapCap = 30;
+  let chosenGapCap = 25;
 
-  for (const maxGap of SOLVER_GAP_CAPS) {
-    const { matrix, objective } = optimizePassRateMatrix(cutoffs, points, mode, rows, maxGap);
-    if (objective < bestObj) {
+  for (const maxGap of ADJACENT_GAP_CAPS) {
+    const { matrix, objective } = optimizePassRateMatrix(presetSeed, rows, cutoffs, mode, maxGap);
+    if (matrix && objective < bestObj) {
       bestObj = objective;
       resultMatrix = matrix;
       chosenGapCap = maxGap;
@@ -461,11 +582,11 @@ export function buildPassRateMatrixFromCutoffs(cutoffs, points, mode, tierRows =
   }
 
   if (!resultMatrix) {
-    resultMatrix = projectFeasibleMatrix(seedFromColumnCalibrate(cutoffs, points, mode), mode, 30);
+    resultMatrix = projectFeasibleMatrix(presetSeed, mode, 25);
   }
 
   for (const hardMin of HARD_TIER_MIN_CANDIDATES) {
-    let candidate = setHardTierMinimum(resultMatrix, mode, hardMin);
+    const candidate = setHardTierMinimum(resultMatrix, mode, hardMin);
     const refined = localSearchPassRates(candidate, rows, cutoffs, mode, chosenGapCap, 800);
     if (refined.objective <= bestObj + 0.01) {
       resultMatrix = refined.matrix;
@@ -476,13 +597,18 @@ export function buildPassRateMatrixFromCutoffs(cutoffs, points, mode, tierRows =
 
   resultMatrix = projectFeasibleMatrix(resultMatrix, mode, chosenGapCap);
 
-  const abilityGapUsed = maxAbilityGapUsed(resultMatrix, mode);
-  const abilityGapMatched = matrixMatchesCutoffs(rows, resultMatrix, cutoffs, mode);
+  const adjacentGapUsed = maxAdjacentGradeGap(resultMatrix, mode);
+  const adjacentGapMatched = matrixMatchesCutoffs(rows, resultMatrix, cutoffs, mode);
 
   return {
     matrix: resultMatrix,
-    abilityGapUsed,
-    abilityGapMatched,
+    presetKey,
+    presetLabel: PRESET_LABELS[presetKey] ?? presetKey,
+    adjacentGapUsed,
+    adjacentGapMatched,
+    adjacentGapCapUsed: chosenGapCap < 999 ? chosenGapCap : null,
+    abilityGapUsed: adjacentGapUsed,
+    abilityGapMatched: adjacentGapMatched,
     hardTierMinUsed: achievedHardTierMin(resultMatrix, mode),
     cutoffErrorSum: cutoffErrorSum(resultMatrix, rows, cutoffs, mode),
   };
@@ -521,7 +647,6 @@ function achievedHardTierMin(matrix, mode) {
 export function collectPassRateWarnings(matrix, mode) {
   const cols = passRateGradeColumnsForMode(mode);
   const warnings = [];
-  const top = cols[0];
   const bottom = cols[cols.length - 1];
 
   const hardRate = matrix[bottom]?.상 ?? 0;
@@ -530,10 +655,14 @@ export function collectPassRateWarnings(matrix, mode) {
   }
 
   for (const tier of TIER_ORDER) {
-    const gap = abilityGapForTier(matrix, tier, cols);
-    if (gap > NORMAL_ABILITY_GAP_MAX) {
-      warnings.push({ grade: top, tier, kind: "ability-gap" });
-      warnings.push({ grade: bottom, tier, kind: "ability-gap" });
+    for (let i = 1; i < cols.length; i++) {
+      const upper = cols[i - 1];
+      const lower = cols[i];
+      const gap = adjacentGradeGap(matrix, upper, lower, tier);
+      if (gap > NORMAL_ABILITY_GAP_MAX) {
+        warnings.push({ grade: upper, tier, kind: "ability-gap" });
+        warnings.push({ grade: lower, tier, kind: "ability-gap" });
+      }
     }
   }
 

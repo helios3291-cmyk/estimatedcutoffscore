@@ -95,8 +95,9 @@ export function initExamHelper(app) {
           <button type="button" id="apply-helper-basic" class="primary-btn small-btn">기본 산출에 적용</button>
         </div>
       </div>
-      <p class="notice">제안 통과율은 <strong>성취도·난이도 규칙을 우선</strong>합니다. 같은 난이도에서 A &gt; B &gt; … &gt; E(인접 5%p), 쉬움 &gt; 보통 &gt; 어려움 순서를 지키며, 목표 분할점수와 다소 차이가 날 수 있습니다. 셀 값은 직접 수정할 수 있습니다.</p>
-      <p class="notice">통과율은 5% 단위 정수입니다. 상·하위 능력자 격차가 15%p를 넘거나, 최고 난이도(상)의 최하위 능력자 통과율이 20% 미만이면 목표 점수 맞춤을 위해 규칙이 완화된 것으로, 해당 칸에 붉은 테두리가 표시됩니다.</p>
+      <p class="notice">제안 통과율은 <strong>교사 입력 패턴(높음/보통 프리셋)</strong>을 바탕으로 목표 분할점수에 맞게 조정됩니다. 같은 난이도에서 A &gt; B &gt; … &gt; E(인접 5%p), 쉬움 &gt; 보통 &gt; 어려움 순서를 지키며, 목표 분할점수와 다소 차이가 날 수 있습니다. 셀 값은 직접 수정할 수 있습니다.</p>
+      <p class="notice">통과율은 5% 단위 정수입니다. <strong>인접 등급 간 격차</strong>가 15%p를 넘거나(완화 시 20·25%p), 최고 난이도(상)의 최하위 능력자 통과율이 20% 미만이면 목표 점수 맞춤을 위해 규칙이 완화된 것으로, 해당 칸에 붉은 테두리가 표시됩니다.</p>
+      <p id="helper-preset-info" class="component-max-hint" hidden></p>
       <div class="table-wrap">
         <table class="data-table pass-rate-table" id="pass-rate-table">
           <thead>
@@ -144,6 +145,14 @@ export function initExamHelper(app) {
       app.helperState.abilityGapUsed = built.abilityGapUsed;
       app.helperState.abilityGapMatched = built.abilityGapMatched;
       app.helperState.hardTierMinUsed = built.hardTierMinUsed;
+      app.helperState.presetKey = built.presetKey;
+      app.helperState.presetLabel = built.presetLabel;
+
+      const presetEl = document.getElementById("helper-preset-info");
+      if (presetEl && built.presetLabel) {
+        presetEl.textContent = `적용 프리셋: ${built.presetLabel}`;
+        presetEl.hidden = false;
+      }
     }
 
     app.helperState.passRateMatrix = matrix;

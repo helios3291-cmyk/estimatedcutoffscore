@@ -75,29 +75,43 @@ export function contribute(score, component) {
   return round1((score * component.weight) / component.max);
 }
 
-export function perfContributionAtBoundary(key, perfCutoffs, config) {
+/** NEIS 합산용 — 중간 반올림 없음 */
+export function contributeRaw(score, component) {
+  if (!Number.isFinite(score) || !component || component.max <= 0) return 0;
+  return (score * component.weight) / component.max;
+}
+
+export function perfContributionAtBoundaryRaw(key, perfCutoffs, config) {
   const c = normalizeComponentConfig(config);
   const areas = normalizePerfCutoffs(perfCutoffs);
   let sum = 0;
   for (let i = 0; i < c.perfAreas.length; i++) {
     const cut = areas[i];
     if (cut && cut[key] != null) {
-      sum += contribute(cut[key], c.perfAreas[i]);
+      sum += contributeRaw(cut[key], c.perfAreas[i]);
     }
   }
-  return round1(sum);
+  return sum;
 }
 
-export function studentPerfContribution(perfScores, config) {
+export function perfContributionAtBoundary(key, perfCutoffs, config) {
+  return round1(perfContributionAtBoundaryRaw(key, perfCutoffs, config));
+}
+
+function studentPerfContributionRaw(perfScores, config) {
   const c = normalizeComponentConfig(config);
   let sum = 0;
   for (let i = 0; i < c.perfAreas.length; i++) {
     const score = Array.isArray(perfScores) ? perfScores[i] : perfScores;
     if (Number.isFinite(score)) {
-      sum += contribute(score, c.perfAreas[i]);
+      sum += contributeRaw(score, c.perfAreas[i]);
     }
   }
-  return round1(sum);
+  return sum;
+}
+
+export function studentPerfContribution(perfScores, config) {
+  return round1(studentPerfContributionRaw(perfScores, config));
 }
 
 export function combineCutoffs(exam1, exam2, perfCutoffs, config, mode) {
@@ -107,9 +121,9 @@ export function combineCutoffs(exam1, exam2, perfCutoffs, config, mode) {
 
   for (const key of keys) {
     result[key] = roundInt(
-      contribute(exam1[key], c.exam1) +
-        contribute(exam2[key], c.exam2) +
-        perfContributionAtBoundary(key, perfCutoffs, c)
+      contributeRaw(exam1[key], c.exam1) +
+        contributeRaw(exam2[key], c.exam2) +
+        perfContributionAtBoundaryRaw(key, perfCutoffs, c)
     );
   }
 
@@ -124,7 +138,7 @@ export function combinePartialCutoffs(exam1, perfCutoffs, config, mode) {
 
   for (const key of keys) {
     result[key] = roundInt(
-      contribute(exam1[key], c.exam1) + perfContributionAtBoundary(key, perfCutoffs, c)
+      contributeRaw(exam1[key], c.exam1) + perfContributionAtBoundaryRaw(key, perfCutoffs, c)
     );
   }
 
@@ -159,7 +173,8 @@ export function solveExam2Cutoffs(finalTarget, exam1, perfCutoffs, config, mode)
   }
 
   for (const key of keys) {
-    const other = contribute(exam1[key], c.exam1) + perfContributionAtBoundary(key, perfCutoffs, c);
+    const other =
+      contributeRaw(exam1[key], c.exam1) + perfContributionAtBoundaryRaw(key, perfCutoffs, c);
     const raw = ((finalTarget[key] - other) * c2.max) / c2.weight;
     rawValues[key] = raw;
 
@@ -194,9 +209,9 @@ export function solveExam2Cutoffs(finalTarget, exam1, perfCutoffs, config, mode)
 export function computeWeightedScore(exam1, exam2, perfScores, config) {
   const c = normalizeComponentConfig(config);
   return roundInt(
-    contribute(exam1, c.exam1) +
-      contribute(exam2, c.exam2) +
-      studentPerfContribution(perfScores, c)
+    contributeRaw(exam1, c.exam1) +
+      contributeRaw(exam2, c.exam2) +
+      studentPerfContributionRaw(perfScores, c)
   );
 }
 

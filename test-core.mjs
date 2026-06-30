@@ -14,7 +14,11 @@ import {
   validateGradeMonotonicMatrix,
   applyAbilityGapWithCutoffs,
   abilityGapForTier,
+  maxAdjacentGradeGap,
+  maxAdjacentGradeGapForTier,
+  adjacentGradeGap,
   enforceAbilityGapMatrix,
+  enforceAdjacentGradeGapMatrix,
   buildPassRateMatrixFromCutoffs,
   buildTierRowsBasic,
   expectedScoreFromMatrix,
@@ -22,6 +26,9 @@ import {
   computeExamCutoffsFromPassMatrix,
   matrixMatchesCutoffs,
   collectPassRateWarnings,
+  PASS_RATE_PRESETS,
+  selectPresetKey,
+  PRESET_LABELS,
 } from "./js/core/passRates.js";
 import { getAppReadiness } from "./js/core/readiness.js";
 import {
@@ -69,6 +76,22 @@ const perfAreas = [perf];
 
 const final = combineCutoffs(exam1, exam2, perfAreas, config, GRADE_MODE_FIVE);
 console.assert(final.AB === 89, `AB expected 89 got ${final.AB}`);
+
+const neisConfig = normalizeComponentConfig({
+  exam1: { weight: 35, max: 100 },
+  exam2: { weight: 35, max: 100 },
+  perfCount: 1,
+  perfAreas: [{ weight: 30, max: 30 }],
+});
+const neisExam1 = { AB: 70.08, BC: 58.84, CD: 49.64, DE: 39.64, E_fail: 20.04 };
+const neisExam2 = { AB: 80.59, BC: 65.59, CD: 50.59, DE: 35.99, E_fail: 20.53 };
+const neisPerf = [{ AB: 30, BC: 29, CD: 27, DE: 24, E_fail: 12 }];
+const neisFinal = combineCutoffs(neisExam1, neisExam2, neisPerf, neisConfig, GRADE_MODE_SIX);
+console.assert(neisFinal.AB === 83, `NEIS AB expected 83 got ${neisFinal.AB}`);
+console.assert(neisFinal.BC === 73, `NEIS BC expected 73 got ${neisFinal.BC}`);
+console.assert(neisFinal.CD === 62, `NEIS CD expected 62 got ${neisFinal.CD}`);
+console.assert(neisFinal.DE === 50, `NEIS DE expected 50 got ${neisFinal.DE}`);
+console.assert(neisFinal.E_fail === 26, `NEIS E_fail expected 26 got ${neisFinal.E_fail}`);
 
 const points = { 하: 30, 중: 50, 상: 20 };
 const cutoffs = { AB: 85, BC: 70, CD: 55, DE: 40 };
@@ -394,9 +417,9 @@ if (builderFive.abilityGapMatched) {
 }
 if (builderFive.abilityGapMatched) {
   console.assert(
-    builderFive.abilityGapUsed <= NORMAL_ABILITY_GAP_MAX ||
+    builderFive.adjacentGapUsed <= NORMAL_ABILITY_GAP_MAX ||
       collectPassRateWarnings(builderFive.matrix, GRADE_MODE_FIVE).some((w) => w.kind === "ability-gap"),
-    "ability gap >15 should show warnings when relaxed"
+    "adjacent gap >15 should show warnings when relaxed"
   );
 }
 const bottomGrade = passRateGradeColumnsForMode(GRADE_MODE_FIVE).slice(-1)[0];
@@ -414,21 +437,21 @@ if (hardRate < HARD_TIER_MIN_PASS_RATE) {
   );
 }
 for (const tier of ["하", "중", "상"]) {
-  const gap = abilityGapForTier(builderFive.matrix, tier, gapCols);
+  const maxGap = maxAdjacentGradeGapForTier(builderFive.matrix, tier, gapCols);
   if (builderFive.abilityGapMatched) {
-    console.assert(gap <= 30 && gap % 5 === 0, `ability gap on ${tier} should be 5-multiple <=30 got ${gap}`);
-    if (gap > NORMAL_ABILITY_GAP_MAX) {
+    console.assert(maxGap <= 25 && maxGap % 5 === 0, `adjacent gap on ${tier} should be 5-multiple <=25 got ${maxGap}`);
+    if (maxGap > NORMAL_ABILITY_GAP_MAX) {
       console.assert(
-        [20, 25, 30].includes(gap),
-        `relaxed ability gap on ${tier} should be 20/25/30 got ${gap}`
+        [20, 25].includes(maxGap),
+        `relaxed adjacent gap on ${tier} should be 20/25 got ${maxGap}`
       );
     }
-  } else if (gap > NORMAL_ABILITY_GAP_MAX) {
+  } else if (maxGap > NORMAL_ABILITY_GAP_MAX) {
     console.assert(
       collectPassRateWarnings(builderFive.matrix, GRADE_MODE_FIVE).some(
         (w) => w.kind === "ability-gap" && w.tier === tier
       ),
-      `ability gap >15 on ${tier} should warn when cutoffs prioritized`
+      `adjacent gap >15 on ${tier} should warn when cutoffs prioritized`
     );
   }
 }
@@ -468,10 +491,18 @@ console.assert(
   builderScreen.cutoffErrorSum <= 15,
   `screen cutoffs L1 error expected <=15 got ${builderScreen.cutoffErrorSum}`
 );
+console.assert(
+  builderScreen.presetKey === "high" || builderScreen.presetKey === "moderate",
+  `builder should report preset key got ${builderScreen.presetKey}`
+);
+console.assert(
+  builderScreen.presetLabel === PRESET_LABELS[builderScreen.presetKey],
+  "builder preset label should match key"
+);
 const screenExp = expectedScoresByGrade(gapTierRows, builderScreen.matrix, GRADE_MODE_FIVE);
 console.assert(
-  Math.abs(screenExp.B - 70) < 0.05 && Math.abs(screenExp.C - 60) < 0.05,
-  `screen B/C should match targets got B=${screenExp.B} C=${screenExp.C}`
+  Math.abs(screenExp.B - 70) <= 1 && Math.abs(screenExp.C - 60) <= 1,
+  `screen B/C should be near targets got B=${screenExp.B} C=${screenExp.C}`
 );
 for (const tier of ["하", "중", "상"]) {
   const cols = passRateGradeColumnsForMode(GRADE_MODE_FIVE);
@@ -496,13 +527,13 @@ const gapResult = applyAbilityGapWithCutoffs(
   GRADE_MODE_FIVE
 );
 for (const tier of ["하", "중", "상"]) {
-  const gap = abilityGapForTier(gapResult.matrix, tier, gapCols);
+  const gap = maxAdjacentGradeGapForTier(gapResult.matrix, tier, gapCols);
   console.assert(
     gap <= gapResult.maxGapUsed + 0.01,
-    `ability gap ${tier} should be <= ${gapResult.maxGapUsed} got ${gap}`
+    `adjacent gap ${tier} should be <= ${gapResult.maxGapUsed} got ${gap}`
   );
 }
-console.assert(gapResult.maxGapUsed <= 30, "ability gap limit should not exceed 30");
+console.assert(gapResult.maxGapUsed <= 30, "adjacent gap limit should not exceed 30");
 if (gapResult.matched) {
   console.assert(
     matrixMatchesCutoffs(gapTierRows, gapResult.matrix, gapCutoffs, GRADE_MODE_FIVE),
@@ -510,13 +541,47 @@ if (gapResult.matched) {
   );
 }
 
-const capped20 = enforceAbilityGapMatrix(gapBaseMatrix, GRADE_MODE_FIVE, 20);
+const capped20 = enforceAdjacentGradeGapMatrix(gapBaseMatrix, GRADE_MODE_FIVE, 20);
 for (const tier of ["하", "중", "상"]) {
   console.assert(
-    abilityGapForTier(capped20, tier, gapCols) <= 20,
-    `enforce 20: tier ${tier} A-E gap`
+    maxAdjacentGradeGapForTier(capped20, tier, gapCols) <= 20,
+    `enforce 20: tier ${tier} max adjacent gap`
   );
 }
+
+for (const [key, preset] of Object.entries(PASS_RATE_PRESETS)) {
+  for (const tier of ["하", "중", "상"]) {
+    const maxGap = maxAdjacentGradeGapForTier(preset, tier, gapCols);
+    console.assert(maxGap <= 20, `preset ${key} tier ${tier} adjacent gap <=20 got ${maxGap}`);
+    for (let i = 1; i < gapCols.length; i++) {
+      const gap = adjacentGradeGap(preset, gapCols[i - 1], gapCols[i], tier);
+      console.assert(gap >= 5, `preset ${key} ${tier} ${gapCols[i - 1]}-${gapCols[i]} monotonic`);
+    }
+  }
+  console.assert(
+    collectPassRateWarnings(preset, GRADE_MODE_FIVE).some((w) => w.kind === "hard-min"),
+    `preset ${key} should warn on E·상 hard-min`
+  );
+}
+
+const screenKey = selectPresetKey(gapTierRows, screenCutoffs, GRADE_MODE_FIVE);
+console.assert(screenKey === "high", `screen cutoffs should select high preset got ${screenKey}`);
+
+const highPreset = PASS_RATE_PRESETS.high;
+const highMaxAdjacent = maxAdjacentGradeGap(highPreset, GRADE_MODE_FIVE);
+console.assert(
+  highMaxAdjacent === 20,
+  `high preset max adjacent gap should be 20 (D-E) got ${highMaxAdjacent}`
+);
+const highWarnings = collectPassRateWarnings(highPreset, GRADE_MODE_FIVE);
+console.assert(
+  highWarnings.some((w) => w.kind === "ability-gap" && w.grade === "D"),
+  "high preset D-E=20 should warn as relaxed adjacent gap"
+);
+console.assert(
+  !highWarnings.some((w) => w.kind === "ability-gap" && w.grade === "A"),
+  "high preset A-B=15 should not warn on A column"
+);
 
 const readinessEmpty = getAppReadiness({});
 console.assert(readinessEmpty.length === 4, "readiness has four chips");

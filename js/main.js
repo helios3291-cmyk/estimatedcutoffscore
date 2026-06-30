@@ -92,9 +92,6 @@ function clearStudentDataInSemesterState(semesterState) {
 }
 
 function buildProfileStateFromApp(app) {
-  const semester = { ...(app.semesterState || {}) };
-  for (const k of STUDENT_STATE_KEYS) delete semester[k];
-
   return {
     gradeMode: app.gradeMode,
     componentConfig: app.componentConfig,
@@ -102,8 +99,8 @@ function buildProfileStateFromApp(app) {
     basicState: app.basicState,
     helperState: app.helperState,
     finalCutoffs: app.finalCutoffs,
-    studentState: app.studentState, // includes individual inputs; student dataset is stored in semesterState, so ok
-    semesterState: semester,
+    studentState: app.studentState,
+    semesterState: app.semesterState ? { ...app.semesterState } : null,
   };
 }
 
@@ -118,10 +115,9 @@ function applyProfileStateToApp(app, profileState) {
   app.finalCutoffs = profileState.finalCutoffs ?? app.finalCutoffs;
   app.studentState = profileState.studentState ?? app.studentState;
 
-  app.semesterState = {
-    ...(app.semesterState || {}),
-    ...(profileState.semesterState || {}),
-  };
+  app.semesterState = profileState.semesterState
+    ? { ...profileState.semesterState }
+    : clearStudentDataInSemesterState({});
 
   document.querySelectorAll('input[name="grade-mode"]').forEach((el) => {
     el.checked = el.value === app.gradeMode;
@@ -351,7 +347,7 @@ function bindUtilityBar() {
         alert(res.error || "프로필 저장에 실패했습니다.");
         return;
       }
-      alert(`프로필이 저장되었습니다: ${trimmed}`);
+      alert(`프로필이 저장되었습니다: ${trimmed}\n(설정·분할점수·학생 데이터 포함)`);
     });
   }
 
@@ -373,7 +369,7 @@ function bindUtilityBar() {
       }
 
       const ok = confirm(
-        `\"${profile.name}\" 프로필을 불러올까요?\n(학생 데이터는 변경되지 않으며, 설정/분할점수/입력값이 덮어써집니다.)`
+        `\"${profile.name}\" 프로필을 불러올까요?\n(설정·분할점수·학생 데이터·붙여넣기 내용이 현재 값을 덮어씁니다.)`
       );
       if (!ok) return;
 
