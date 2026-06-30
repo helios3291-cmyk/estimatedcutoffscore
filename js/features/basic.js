@@ -2,6 +2,8 @@ import {
   getBoundaryKeys,
   BOUNDARY_LABELS,
   parseScore,
+  parseExamCutoffScore,
+  formatExamCutoffScore,
   validateCutoffs,
   buildGradeRanges,
 } from "../core/grades.js";
@@ -21,18 +23,26 @@ import {
   exportToExcel,
 } from "../io/export.js";
 
+function isExamCutoffPrefix(prefix) {
+  return prefix === "e1" || prefix === "e2";
+}
+
 function readComponentCutoffs(prefix, mode) {
   const keys = getBoundaryKeys(mode);
+  const parse = isExamCutoffPrefix(prefix) ? parseExamCutoffScore : parseScore;
   const o = {};
-  for (const k of keys) o[k] = parseScore(document.getElementById(`${prefix}-${k}`)?.value);
+  for (const k of keys) o[k] = parse(document.getElementById(`${prefix}-${k}`)?.value);
   return o;
 }
 
 function writeComponentCutoffs(prefix, cutoffs, mode) {
   const keys = getBoundaryKeys(mode);
+  const isExam = isExamCutoffPrefix(prefix);
   for (const k of keys) {
     const el = document.getElementById(`${prefix}-${k}`);
-    if (el && cutoffs[k] != null) el.value = cutoffs[k];
+    if (el && cutoffs[k] != null) {
+      el.value = isExam ? formatExamCutoffScore(cutoffs[k]) : cutoffs[k];
+    }
   }
 }
 
@@ -520,8 +530,8 @@ function calculate(app) {
       return `
     <tr>
       <td>${BOUNDARY_LABELS[k]}</td>
-      <td>${exam1[k]}</td><td class="contrib">${c.exam1}</td>
-      <td>${exam2[k]}</td><td class="contrib">${c.exam2}</td>
+      <td>${formatExamCutoffScore(exam1[k])}</td><td class="contrib">${c.exam1}</td>
+      <td>${formatExamCutoffScore(exam2[k])}</td><td class="contrib">${c.exam2}</td>
       ${perfCells}
       <td><strong>${finalCutoffs[k]}</strong></td>
     </tr>`;

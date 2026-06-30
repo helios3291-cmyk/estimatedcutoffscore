@@ -1,5 +1,5 @@
 import { predictStudentGrade, predictCohortGrades } from "../core/student.js";
-import { BOUNDARY_LABELS, getBoundaryKeys, normalizeFinalCutoffs, roundInt } from "../core/grades.js";
+import { BOUNDARY_LABELS, getBoundaryKeys, normalizeFinalCutoffs, round1, roundInt } from "../core/grades.js";
 import { getConfigForApp } from "./basic.js";
 import { perfWeightSum } from "../core/cutoffs.js";
 import {
@@ -151,7 +151,7 @@ export function initStudentPredict(app) {
 
     <section class="card">
       <h2>실제 정기시험2 학생 데이터</h2>
-      <p class="notice"><strong>학생 성적 데이터는 NEIS에서 「XLS data」로 다운로드한 파일을 엑셀에서 연 뒤, 해당 시트 범위를 복사하여 아래 표에 붙여 넣으세요.</strong> 3. 학생 성적 기반 정기시험2 준비 탭의 정기1·수행과 <strong>동일한 반×번호 헤더·행·열 구조</strong>로 입력하세요. 아래 「학급 학기말 성적 예측」에 사용됩니다.</p>
+      <p class="notice"><strong>학생 성적 데이터는 NEIS에서 「XLS data」로 다운로드한 파일을 엑셀에서 연 뒤, 해당 시트 범위를 복사하여 아래 표에 붙여 넣으세요.</strong> 3. 학생 성적 기반 정기시험2 준비 탭의 정기1·수행과 <strong>동일한 반×번호 헤더·행·열 구조</strong>로 입력하세요. 아래 「전체 학생 학기말 성적 예측」에 사용됩니다.</p>
       <div class="paste-toolbar">
         <button type="button" class="secondary-btn small-btn" id="sf-exam2-actual-example">예시 데이터 채우기</button>
       </div>
@@ -162,7 +162,7 @@ export function initStudentPredict(app) {
     </section>
 
     <section class="card">
-      <h2>학급 학기말 성적 예측</h2>
+      <h2>전체 학생 학기말 성적 예측</h2>
       <p class="notice">전제: 1. 기본 탭에서 「학기말 분할점수 산출」 완료, 3번 탭에서 정기1·수행 「데이터 반영」 완료, 이 탭에서 <strong>정기2</strong> 「데이터 반영」 완료.</p>
       <button type="button" id="calc-cohort" class="primary-btn">학기말 성적 예측</button>
       <p id="cohort-error" class="error-msg" hidden></p>
@@ -170,7 +170,7 @@ export function initStudentPredict(app) {
 
     <section id="cohort-result" class="card" hidden>
       <div class="card-head-row">
-        <h2>학급 학기말 성적 예측 결과</h2>
+        <h2>전체 학생 학기말 성적 예측 결과</h2>
         <button type="button" id="cohort-export" class="secondary-btn small-btn">엑셀로보내기</button>
       </div>
       <p id="cohort-summary" class="sample-summary"></p>
@@ -388,10 +388,13 @@ export function initStudentPredict(app) {
       .join("");
 
     const grades = gradeListForMode(app.gradeMode);
-    const summaryParts = grades
-      .filter((g) => result.gradeCounts[g])
-      .map((g) => `${g} ${result.gradeCounts[g]}명`);
-    document.getElementById("cohort-summary").textContent = `매칭 ${result.matchedCount}명 · ${summaryParts.join(" · ")}`;
+    const total = result.matchedCount;
+    const summaryParts = grades.map((g) => {
+      const count = result.gradeCounts[g] || 0;
+      const pct = total ? round1((count / total) * 100) : 0;
+      return `${g} ${count}명 (${pct}%)`;
+    });
+    document.getElementById("cohort-summary").textContent = `매칭 ${total}명 · ${summaryParts.join(" · ")}`;
   }
 
   document.getElementById("calc-cohort").addEventListener("click", calculateCohort);
@@ -423,7 +426,7 @@ export function initStudentPredict(app) {
     if (!lastCohortResult?.rows?.length) return;
     const config = getConfigForApp(app);
     try {
-      exportToExcel("학급_학기말_성적_예측.xlsx", [
+      exportToExcel("전체_학생_학기말_성적_예측.xlsx", [
         {
           name: "예측",
           rows: buildCohortExcelRows(lastCohortResult.rows, config),

@@ -1,7 +1,8 @@
 import {
   getBoundaryKeys,
   BOUNDARY_LABELS,
-  parseScore,
+  parseExamCutoffScore,
+  formatExamCutoffScore,
   validateCutoffs,
   TIER_ORDER,
   TIER_KEYS,
@@ -227,7 +228,7 @@ export function initExamHelper(app) {
         (k) => `
       <div class="field boundary-field">
         <label for="hc-${k}">${BOUNDARY_LABELS[k]}</label>
-        <input type="number" id="hc-${k}" min="0" max="100" step="0.1" value="${app.helperState.cutoffs[k] ?? ""}">
+        <input type="number" id="hc-${k}" min="0" max="100" step="0.01" value="${app.helperState.cutoffs[k] != null ? formatExamCutoffScore(app.helperState.cutoffs[k]) : ""}">
       </div>`
       )
       .join("");
@@ -244,7 +245,7 @@ export function initExamHelper(app) {
   function readCutoffs() {
     const keys = getBoundaryKeys(app.gradeMode);
     const o = {};
-    for (const k of keys) o[k] = parseScore(document.getElementById(`hc-${k}`)?.value);
+    for (const k of keys) o[k] = parseExamCutoffScore(document.getElementById(`hc-${k}`)?.value);
     return o;
   }
 
@@ -426,7 +427,7 @@ export function initExamHelper(app) {
                 return `
               <tr>
                 <td>${BOUNDARY_LABELS[k]}</td>
-                <td>${target != null ? target : "-"}</td>
+                <td>${target != null ? formatExamCutoffScore(target) : "-"}</td>
                 <td><strong>${value != null ? value.toFixed(2) : "-"}</strong></td>
                 <td class="${match ? "diff-pos" : "diff-neg"}">${diff != null ? `${diff >= 0 ? "+" : ""}${diff.toFixed(2)}` : "-"}</td>
               </tr>`;
@@ -630,7 +631,7 @@ export function applyExamCutoffsToHelper(exam, cutoffs, app) {
   const keys = getBoundaryKeys(app.gradeMode);
   for (const k of keys) {
     const el = document.getElementById(`hc-${k}`);
-    if (el && cutoffs[k] != null) el.value = cutoffs[k];
+    if (el && cutoffs[k] != null) el.value = formatExamCutoffScore(cutoffs[k]);
   }
 
   app.helperState.cutoffs = { ...cutoffs };

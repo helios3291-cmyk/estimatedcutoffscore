@@ -152,6 +152,17 @@ export function parseScore(value) {
   return Number.isFinite(n) ? round1(n) : null;
 }
 
+/** 정기시험 추정 분할점수 — 소수 둘째 자리 */
+export function parseExamCutoffScore(value) {
+  if (value === "" || value === null || value === undefined) return null;
+  const n = parseFloat(value);
+  return Number.isFinite(n) ? round2(n) : null;
+}
+
+export function formatExamCutoffScore(n) {
+  return n != null && Number.isFinite(n) ? n.toFixed(2) : "";
+}
+
 export function validateCutoffs(cutoffs, mode, maxScore = 100) {
   const keys = getBoundaryKeys(mode);
   const issues = [];

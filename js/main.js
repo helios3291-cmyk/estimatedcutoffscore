@@ -192,9 +192,9 @@ function buildGuideHtml() {
       <h3>정기시험2 실시 완료 후</h3>
       <ol class="guide-steps">
         <li>4. 학기말 성적 분석 탭에서 <strong>실제 정기시험2 학생 데이터</strong>를 입력하고 「데이터 반영」합니다.</li>
-        <li>같은 탭에서 <strong>학급 학기말 성적 예측</strong>을 실행합니다.</li>
+        <li>같은 탭에서 <strong>전체 학생 학기말 성적 예측</strong>을 실행합니다.</li>
       </ol>
-      <div class="guide-flow">4. 학기말 성적 분석(정기2) → 학급 학기말 성적 예측</div>
+      <div class="guide-flow">4. 학기말 성적 분석(정기2) → 전체 학생 학기말 성적 예측</div>
     </div>
   `;
 }
