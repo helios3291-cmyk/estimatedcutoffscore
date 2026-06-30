@@ -7,6 +7,7 @@ import {
 import { normalizeComponentConfig, computeContributions } from "../core/cutoffs.js";
 import { computeExamCutoffsFromPassMatrix } from "../core/passRates.js";
 import { splitStudentId } from "../core/studentData.js";
+import { formatScore2 } from "../core/grades.js";
 
 export function exportToExcel(wbName, sheets) {
   if (typeof XLSX === "undefined") {
@@ -56,13 +57,16 @@ export function buildBasicExcelRows(finalCutoffs, gradeRanges, config, component
       mode,
       key
     );
-    const perfCells = cont.perfByArea.flatMap((contrib, i) => [perfAreas[i][key], contrib]);
+    const perfCells = cont.perfByArea.flatMap((contrib, i) => [
+      formatScore2(perfAreas[i][key]),
+      formatScore2(contrib),
+    ]);
     rows.push([
       BOUNDARY_LABELS[key],
-      components.exam1[key],
-      cont.exam1,
-      components.exam2[key],
-      cont.exam2,
+      formatScore2(components.exam1[key]),
+      formatScore2(cont.exam1),
+      formatScore2(components.exam2[key]),
+      formatScore2(cont.exam2),
       ...perfCells,
       finalCutoffs[key],
     ]);
@@ -255,13 +259,42 @@ export function pullExamCutoffFromSession(exam, source = null) {
 }
 
 export function buildCohortExcelRows(rows, config) {
-  const perfHeaders = config.perfAreas.map((_, i) =>
-    config.perfAreas.length > 1 ? `수행${i + 1}` : "수행"
-  );
-  const header = ["반", "번호", "정기1", "정기2", ...perfHeaders, "학기말 점수", "예상 성취도"];
+  const c = normalizeComponentConfig(config);
+  const perfHeaderPairs = c.perfAreas.flatMap((area, i) => {
+    const label = c.perfAreas.length > 1 ? `수행${i + 1}` : "수행";
+    return [`${label}(/${area.max})`, `${label}환산`];
+  });
+  const header = [
+    "반",
+    "번호",
+    `정기1(/${c.exam1.max})`,
+    "정기1환산",
+    `정기2(/${c.exam2.max})`,
+    "정기2환산",
+    ...perfHeaderPairs,
+    "합계",
+    "원점수",
+    "예상 성취도",
+  ];
   const dataRows = rows.map((row) => {
     const { classLabel, num } = splitStudentId(row.id);
-    return [classLabel, num, row.exam1, row.exam2, ...row.perfAreas, row.finalScore, row.grade];
+    const contrib = row.contributions || {};
+    const perfCells = c.perfAreas.flatMap((_, i) => [
+      formatScore2(row.perfAreas[i]),
+      formatScore2(contrib.perfByArea?.[i]),
+    ]);
+    return [
+      classLabel,
+      num,
+      formatScore2(row.exam1),
+      formatScore2(contrib.exam1),
+      formatScore2(row.exam2),
+      formatScore2(contrib.exam2),
+      ...perfCells,
+      formatScore2(row.totalSum),
+      row.finalScore,
+      row.grade,
+    ];
   });
   return [header, ...dataRows];
 }

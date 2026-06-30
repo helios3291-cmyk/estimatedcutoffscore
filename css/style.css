@@ -707,6 +707,13 @@ header h1 {
   font-size: 0.85rem;
 }
 
+.data-table th .col-hint {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 400;
+  color: #718096;
+}
+
 .pass-rate-table {
   font-size: 0.85rem;
 }

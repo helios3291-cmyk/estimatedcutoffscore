@@ -160,6 +160,11 @@ export function parseExamCutoffScore(value) {
 }
 
 export function formatExamCutoffScore(n) {
+  return formatScore2(n);
+}
+
+/** 표시용 — 소수 둘째 자리 */
+export function formatScore2(n) {
   return n != null && Number.isFinite(n) ? n.toFixed(2) : "";
 }
 

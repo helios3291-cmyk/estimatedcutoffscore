@@ -3,6 +3,7 @@ import {
   combinePartialCutoffs,
   solveExam2Cutoffs,
   computeWeightedScore,
+  computeWeightedScoreBreakdown,
   defaultComponentConfig,
   normalizeComponentConfig,
 } from "./js/core/cutoffs.js";
@@ -92,6 +93,22 @@ console.assert(neisFinal.BC === 73, `NEIS BC expected 73 got ${neisFinal.BC}`);
 console.assert(neisFinal.CD === 62, `NEIS CD expected 62 got ${neisFinal.CD}`);
 console.assert(neisFinal.DE === 50, `NEIS DE expected 50 got ${neisFinal.DE}`);
 console.assert(neisFinal.E_fail === 26, `NEIS E_fail expected 26 got ${neisFinal.E_fail}`);
+
+const neisStudentConfig = normalizeComponentConfig({
+  exam1: { weight: 30, max: 100 },
+  exam2: { weight: 30, max: 100 },
+  perfCount: 2,
+  perfAreas: [
+    { weight: 30, max: 30 },
+    { weight: 10, max: 10 },
+  ],
+});
+const neisStudent1 = computeWeightedScoreBreakdown(37.9, 27.3, [12, 7], neisStudentConfig);
+console.assert(neisStudent1.totalSum === 38.56, `NEIS student1 total expected 38.56 got ${neisStudent1.totalSum}`);
+console.assert(neisStudent1.rawScore === 39, `NEIS student1 raw expected 39 got ${neisStudent1.rawScore}`);
+const neisStudent2 = computeWeightedScoreBreakdown(78.4, 56.5, [30, 10], neisStudentConfig);
+console.assert(neisStudent2.totalSum === 80.47, `NEIS student2 total expected 80.47 got ${neisStudent2.totalSum}`);
+console.assert(neisStudent2.rawScore === 80, `NEIS student2 raw expected 80 got ${neisStudent2.rawScore}`);
 
 const points = { 하: 30, 중: 50, 상: 20 };
 const cutoffs = { AB: 85, BC: 70, CD: 55, DE: 40 };

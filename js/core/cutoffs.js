@@ -1,5 +1,6 @@
 import {
   round1,
+  round2,
   getBoundaryKeys,
   validateCutoffs,
   roundInt,
@@ -120,11 +121,12 @@ export function combineCutoffs(exam1, exam2, perfCutoffs, config, mode) {
   const result = {};
 
   for (const key of keys) {
-    result[key] = roundInt(
+    const totalSum = round2(
       contributeRaw(exam1[key], c.exam1) +
         contributeRaw(exam2[key], c.exam2) +
         perfContributionAtBoundaryRaw(key, perfCutoffs, c)
     );
+    result[key] = roundInt(totalSum);
   }
 
   return result;
@@ -137,9 +139,10 @@ export function combinePartialCutoffs(exam1, perfCutoffs, config, mode) {
   const result = {};
 
   for (const key of keys) {
-    result[key] = roundInt(
+    const totalSum = round2(
       contributeRaw(exam1[key], c.exam1) + perfContributionAtBoundaryRaw(key, perfCutoffs, c)
     );
+    result[key] = roundInt(totalSum);
   }
 
   return result;
@@ -149,13 +152,13 @@ export function computeContributions(exam1, exam2, perfCutoffs, config, mode, ke
   const c = normalizeComponentConfig(config);
   const areas = normalizePerfCutoffs(perfCutoffs);
   const perfByArea = c.perfAreas.map((area, i) =>
-    areas[i] && areas[i][key] != null ? contribute(areas[i][key], area) : 0
+    areas[i] && areas[i][key] != null ? round2(contributeRaw(areas[i][key], area)) : 0
   );
-  const perfTotal = round1(perfByArea.reduce((s, v) => s + v, 0));
+  const perfTotal = round2(perfByArea.reduce((s, v) => s + v, 0));
 
   return {
-    exam1: contribute(exam1[key], c.exam1),
-    exam2: contribute(exam2[key], c.exam2),
+    exam1: round2(contributeRaw(exam1[key], c.exam1)),
+    exam2: round2(contributeRaw(exam2[key], c.exam2)),
     perfByArea,
     perf: perfTotal,
   };
@@ -206,13 +209,44 @@ export function solveExam2Cutoffs(finalTarget, exam1, perfCutoffs, config, mode)
   return { cutoffs: result, issues: [], rawValues };
 }
 
-export function computeWeightedScore(exam1, exam2, perfScores, config) {
+export function computeWeightedScoreRaw(exam1, exam2, perfScores, config) {
   const c = normalizeComponentConfig(config);
-  return roundInt(
+  return (
+    contributeRaw(exam1, c.exam1) +
+    contributeRaw(exam2, c.exam2) +
+    studentPerfContributionRaw(perfScores, c)
+  );
+}
+
+/** NEIS 방식 — 환산 합계(소수 둘째 자리) 후 원점수 정수 반올림 */
+export function computeWeightedScoreBreakdown(exam1, exam2, perfScores, config) {
+  const c = normalizeComponentConfig(config);
+  const exam1Contrib = round2(contributeRaw(exam1, c.exam1));
+  const exam2Contrib = round2(contributeRaw(exam2, c.exam2));
+  const perfByArea = c.perfAreas.map((area, i) => {
+    const score = Array.isArray(perfScores) ? perfScores[i] : perfScores;
+    return Number.isFinite(score) ? round2(contributeRaw(score, area)) : 0;
+  });
+  const perfContrib = round2(studentPerfContributionRaw(perfScores, c));
+  const totalSum = round2(
     contributeRaw(exam1, c.exam1) +
       contributeRaw(exam2, c.exam2) +
       studentPerfContributionRaw(perfScores, c)
   );
+  const rawScore = roundInt(totalSum);
+
+  return {
+    exam1: exam1Contrib,
+    exam2: exam2Contrib,
+    perfByArea,
+    perf: perfContrib,
+    totalSum,
+    rawScore,
+  };
+}
+
+export function computeWeightedScore(exam1, exam2, perfScores, config) {
+  return computeWeightedScoreBreakdown(exam1, exam2, perfScores, config).rawScore;
 }
 
 export function validateComponentConfig(config) {

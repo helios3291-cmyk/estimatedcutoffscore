@@ -4,6 +4,7 @@ import {
   parseScore,
   parseExamCutoffScore,
   formatExamCutoffScore,
+  formatScore2,
   validateCutoffs,
   buildGradeRanges,
 } from "../core/grades.js";
@@ -205,7 +206,7 @@ export function initBasic(app) {
   root.innerHTML = `
     <section class="card">
       <h2>요소별 반영 비율 · 만점</h2>
-      <p class="notice">환산점 = 원점수 × (반영 비율 ÷ 만점). 수행평가는 기본적으로 영역별 만점 = 반영 비율입니다.</p>
+      <p class="notice">환산점 = 원점수 × (반영 비율 ÷ 만점). 수행평가는 기본적으로 영역별 만점 = 반영 비율입니다. 결과 표는 소수 둘째 자리까지 표시합니다.</p>
       <div class="table-wrap">
         <table class="data-table config-table">
           <thead>
@@ -524,14 +525,14 @@ function calculate(app) {
       const perfCells = c.perfByArea
         .map((contrib, i) => {
           const score = perfAreas[i][k];
-          return `<td>${score ?? ""}</td><td class="contrib">${contrib}</td>`;
+          return `<td>${formatScore2(score)}</td><td class="contrib">${formatScore2(contrib)}</td>`;
         })
         .join("");
       return `
     <tr>
       <td>${BOUNDARY_LABELS[k]}</td>
-      <td>${formatExamCutoffScore(exam1[k])}</td><td class="contrib">${c.exam1}</td>
-      <td>${formatExamCutoffScore(exam2[k])}</td><td class="contrib">${c.exam2}</td>
+      <td>${formatExamCutoffScore(exam1[k])}</td><td class="contrib">${formatScore2(c.exam1)}</td>
+      <td>${formatExamCutoffScore(exam2[k])}</td><td class="contrib">${formatScore2(c.exam2)}</td>
       ${perfCells}
       <td><strong>${finalCutoffs[k]}</strong></td>
     </tr>`;

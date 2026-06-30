@@ -1,5 +1,5 @@
 import { predictStudentGrade, predictCohortGrades } from "../core/student.js";
-import { BOUNDARY_LABELS, getBoundaryKeys, normalizeFinalCutoffs, round1, roundInt } from "../core/grades.js";
+import { BOUNDARY_LABELS, getBoundaryKeys, normalizeFinalCutoffs, round1, roundInt, formatScore2 } from "../core/grades.js";
 import { getConfigForApp } from "./basic.js";
 import { perfWeightSum } from "../core/cutoffs.js";
 import {
@@ -13,6 +13,69 @@ import {
 import { gradeListForMode } from "../core/gradeDistribution.js";
 import { exportToExcel, buildCohortExcelRows } from "../io/export.js";
 import { getPasteGridText, initPasteGridElement, setPasteGridText } from "../ui/pasteGrid.js";
+
+function buildCohortTableHead(config) {
+  const perfCols = config.perfAreas.flatMap((area, i) => {
+    const label = config.perfAreas.length > 1 ? `수행${i + 1}` : "수행";
+    return [`${label}<br><span class="col-hint">/${area.max}</span>`, `${label}환산`];
+  });
+  return `
+    <tr>
+      <th>반</th><th>번호</th>
+      <th>정기1<br><span class="col-hint">/${config.exam1.max}</span></th><th>정기1환산</th>
+      <th>정기2<br><span class="col-hint">/${config.exam2.max}</span></th><th>정기2환산</th>
+      ${perfCols.map((h) => `<th>${h}</th>`).join("")}
+      <th>합계</th><th>원점수</th><th>예상 성취도</th>
+    </tr>`;
+}
+
+function buildScoreBreakdownRows(config, scores, contributions) {
+  const perfRows = config.perfAreas.map((area, i) => {
+    const label = config.perfAreas.length > 1 ? `수행평가 ${i + 1}` : "수행평가";
+    return `
+      <tr>
+        <td>${label}</td>
+        <td>${formatScore2(scores.perfAreas[i])} / ${area.max}</td>
+        <td class="contrib">${formatScore2(contributions.perfByArea[i])}</td>
+      </tr>`;
+  });
+  return `
+    <tr>
+      <td>정기시험1</td>
+      <td>${formatScore2(scores.exam1)} / ${config.exam1.max}</td>
+      <td class="contrib">${formatScore2(contributions.exam1)}</td>
+    </tr>
+    <tr>
+      <td>정기시험2</td>
+      <td>${formatScore2(scores.exam2)} / ${config.exam2.max}</td>
+      <td class="contrib">${formatScore2(contributions.exam2)}</td>
+    </tr>
+    ${perfRows}`;
+}
+
+function buildCohortTableRow(row, config) {
+  const { classLabel, num } = splitStudentId(row.id);
+  const contrib = row.contributions || {};
+  const perfCells = config.perfAreas
+    .map(
+      (_, i) =>
+        `<td>${formatScore2(row.perfAreas[i])}</td><td class="contrib">${formatScore2(contrib.perfByArea?.[i])}</td>`
+    )
+    .join("");
+  return `
+    <tr>
+      <td>${classLabel}</td>
+      <td>${num}</td>
+      <td>${formatScore2(row.exam1)}</td>
+      <td class="contrib">${formatScore2(contrib.exam1)}</td>
+      <td>${formatScore2(row.exam2)}</td>
+      <td class="contrib">${formatScore2(contrib.exam2)}</td>
+      ${perfCells}
+      <td><strong>${formatScore2(row.totalSum)}</strong></td>
+      <td><strong>${row.finalScore}</strong></td>
+      <td class="grade-cell grade-${row.grade}">${row.grade}</td>
+    </tr>`;
+}
 
 function initExam2ActualPasteGrid(app) {
   const host = document.getElementById("sf-exam2-actual-paste");
@@ -61,7 +124,7 @@ function renderPerfScoreInputs(app) {
       return `
         <div class="field">
           <label id="label-s-perf-${i}" for="s-perf-${i}">${label} (만점 ${area.max})</label>
-          <input type="number" id="s-perf-${i}" min="0" max="${area.max}" step="0.1" placeholder="점수" value="${saved[i] ?? ""}">
+          <input type="number" id="s-perf-${i}" min="0" max="${area.max}" step="0.01" placeholder="점수" value="${saved[i] ?? ""}">
         </div>`;
     })
     .join("");
@@ -116,8 +179,8 @@ export function initStudentPredict(app) {
     <section class="card">
       <h2>학생 점수 입력</h2>
       <div class="weights-grid">
-        <div class="field"><label id="label-s-exam1" for="s-exam1">정기시험1 (만점 100)</label><input type="number" id="s-exam1" min="0" max="100" step="0.1" placeholder="점수"></div>
-        <div class="field"><label id="label-s-exam2" for="s-exam2">정기시험2 (만점 100)</label><input type="number" id="s-exam2" min="0" max="100" step="0.1" placeholder="점수"></div>
+        <div class="field"><label id="label-s-exam1" for="s-exam1">정기시험1 (만점 100)</label><input type="number" id="s-exam1" min="0" max="100" step="0.01" placeholder="점수"></div>
+        <div class="field"><label id="label-s-exam2" for="s-exam2">정기시험2 (만점 100)</label><input type="number" id="s-exam2" min="0" max="100" step="0.01" placeholder="점수"></div>
       </div>
       <div id="student-perf-inputs" class="weights-grid"></div>
       <p id="student-weight-display" class="weight-display"></p>
@@ -136,9 +199,17 @@ export function initStudentPredict(app) {
       <div class="prediction-hero">
         <div class="prediction-grade" id="pred-grade">-</div>
         <div class="prediction-detail">
-          <p>학기말 점수: <strong id="pred-final">-</strong></p>
+          <p>원점수: <strong id="pred-final">-</strong></p>
+          <p>합계: <strong id="pred-total">-</strong></p>
           <p id="pred-margin"></p>
         </div>
+      </div>
+      <h3 class="sub-heading">요소별 점수 · 환산</h3>
+      <div class="table-wrap">
+        <table class="data-table" id="score-breakdown-table">
+          <thead><tr><th>요소</th><th>점수 (만점)</th><th>환산점</th></tr></thead>
+          <tbody></tbody>
+        </table>
       </div>
       <h3 class="sub-heading">경계와의 거리</h3>
       <div class="table-wrap">
@@ -262,6 +333,13 @@ export function initStudentPredict(app) {
     document.getElementById("pred-grade").textContent = result.grade;
     document.getElementById("pred-grade").className = `prediction-grade grade-${result.grade}`;
     document.getElementById("pred-final").textContent = `${result.finalScore}점`;
+    document.getElementById("pred-total").textContent = `${formatScore2(result.totalSum)}점`;
+
+    document.querySelector("#score-breakdown-table tbody").innerHTML = buildScoreBreakdownRows(
+      config,
+      scores,
+      result.contributions
+    );
 
     let margin = "";
     if (result.nearestUpper) {
@@ -360,31 +438,10 @@ export function initStudentPredict(app) {
     resultEl.hidden = false;
     lastCohortResult = result;
 
-    const perfHeaders = config.perfAreas.map((_, i) =>
-      config.perfAreas.length > 1 ? `수행${i + 1}` : "수행"
-    );
-    document.querySelector("#cohort-table thead").innerHTML = `
-      <tr>
-        <th>반</th><th>번호</th><th>정기1</th><th>정기2</th>
-        ${perfHeaders.map((h) => `<th>${h}</th>`).join("")}
-        <th>학기말 점수</th><th>예상 성취도</th>
-      </tr>`;
+    document.querySelector("#cohort-table thead").innerHTML = buildCohortTableHead(config);
 
     document.querySelector("#cohort-table tbody").innerHTML = result.rows
-      .map((row) => {
-        const { classLabel, num } = splitStudentId(row.id);
-        const perfCells = row.perfAreas.map((s) => `<td>${s}</td>`).join("");
-        return `
-      <tr>
-        <td>${classLabel}</td>
-        <td>${num}</td>
-        <td>${row.exam1}</td>
-        <td>${row.exam2}</td>
-        ${perfCells}
-        <td><strong>${row.finalScore}</strong></td>
-        <td class="grade-cell grade-${row.grade}">${row.grade}</td>
-      </tr>`;
-      })
+      .map((row) => buildCohortTableRow(row, config))
       .join("");
 
     const grades = gradeListForMode(app.gradeMode);

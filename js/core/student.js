@@ -1,7 +1,6 @@
 import {
-  computeWeightedScore,
+  computeWeightedScoreBreakdown,
   normalizeComponentConfig,
-  studentPerfContribution,
 } from "./cutoffs.js";
 import { predictGrade, distanceToBoundaries, round1 } from "./grades.js";
 
@@ -46,7 +45,8 @@ export function predictStudentGrade(scores, config, finalCutoffs, mode) {
     }
   }
 
-  const finalScore = computeWeightedScore(exam1, exam2, perfScores, c);
+  const scoreBreakdown = computeWeightedScoreBreakdown(exam1, exam2, perfScores, c);
+  const finalScore = scoreBreakdown.rawScore;
   const prediction = predictGrade(finalScore, finalCutoffs, mode);
   const distances = distanceToBoundaries(finalScore, finalCutoffs, mode);
 
@@ -55,8 +55,10 @@ export function predictStudentGrade(scores, config, finalCutoffs, mode) {
 
   return {
     finalScore,
+    totalSum: scoreBreakdown.totalSum,
+    contributions: scoreBreakdown,
     grade: prediction.grade,
-    perfContribution: studentPerfContribution(perfScores, c),
+    perfContribution: scoreBreakdown.perf,
     distances,
     marginAbove: upper ? round1(upper.diff) : null,
     marginBelow: lower ? round1(Math.abs(lower.diff)) : null,
@@ -111,6 +113,8 @@ export function predictCohortGrades(aligned, config, finalCutoffs, mode) {
       exam1: exam1Scores[i],
       exam2: exam2Scores[i],
       perfAreas,
+      contributions: result.contributions,
+      totalSum: result.totalSum,
       finalScore: result.finalScore,
       grade: result.grade,
     });
